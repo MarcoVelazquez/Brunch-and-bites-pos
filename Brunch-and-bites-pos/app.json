@@ -3,7 +3,7 @@
     "name": "Brunch-and-bites-pos",
     "slug": "Brunch-and-bites-pos",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "landscape",
     "icon": "./assets/images/icon.png",
     "scheme": "brunchandbitespos",
     "userInterfaceStyle": "automatic",
