@@ -1,13 +1,18 @@
-import React from "react";
-import { View, Text, TouchableOpacity, Image, StyleSheet, ScrollView } from "react-native";
+import React, { useState } from "react";
+import { View, Text, TouchableOpacity, Image, StyleSheet, ScrollView, Modal, TextInput } from "react-native";
 
 export default function App() {
+  const [modalVisible, setModalVisible] = useState(false);
+  const [cantidadRecibida, setCantidadRecibida] = useState("0");
+  const total = 100;
+  const cambio = Number(cantidadRecibida) - total;
+
   return (
     <View style={styles.root}>
       {/* Sidebar */}
       <View style={styles.sidebar}>
         <Image
-          source={{ uri: "https://i.imgur.com/your-logo.png" }} // Cambia por tu logo local o remoto
+          source={{ uri: "https://i.imgur.com/your-logo.png" }}
           style={styles.logo}
         />
         <View style={styles.menuGrid}>
@@ -60,17 +65,51 @@ export default function App() {
               <Text style={{ flex: 1 }}>Total</Text>
               <Text style={{ flex: 1, textAlign: "right" }}>100$</Text>
             </View>
-            <TouchableOpacity style={styles.payButton}>
+            <TouchableOpacity style={styles.payButton} onPress={() => setModalVisible(true)}>
               <Text style={styles.payButtonText}>Pagar</Text>
             </TouchableOpacity>
           </View>
         </View>
       </View>
+
+      {/* Modal de Cobro */}
+      <Modal visible={modalVisible} transparent animationType="slide">
+        <View style={styles.modalContainer}>
+          <View style={styles.cobroBox}>
+            <View style={styles.cobroHeader}>
+              <Text style={styles.cobroHeaderTitle}>Cobro</Text>
+            </View>
+            <View style={styles.cobroContent}>
+              <View style={styles.cobroRow}>
+                <Text style={styles.cobroLabel}>Total:</Text>
+                <Text style={styles.cobroValue}>{total}$</Text>
+              </View>
+              <View style={styles.cobroRow}>
+                <Text style={styles.cobroLabel}>Cantidad recibida:</Text>
+                <TextInput
+                  style={styles.cobroInput}
+                  value={cantidadRecibida}
+                  onChangeText={setCantidadRecibida}
+                  keyboardType="numeric"
+                />
+              </View>
+              <View style={styles.cobroRow}>
+                <Text style={styles.cobroLabel}>Cambio:</Text>
+                <Text style={styles.cobroValue}>{cambio >= 0 ? cambio + "$" : "0$"}</Text>
+              </View>
+            </View>
+            <TouchableOpacity style={styles.cobrarBtn} onPress={() => setModalVisible(false)}>
+              <Text style={styles.cobrarBtnText}>Cobrar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  // ...existing styles...
   root: {
     flex: 1,
     flexDirection: "row",
@@ -191,6 +230,71 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   payButtonText: {
+    color: "#000",
+    fontSize: 28,
+    fontWeight: "bold",
+  },
+  // Modal styles
+  modalContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.3)",
+  },
+  cobroBox: {
+    width: 350,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    overflow: "hidden",
+    alignItems: "center",
+  },
+  cobroHeader: {
+    backgroundColor: "#a3d6b1",
+    width: "100%",
+    padding: 10,
+    alignItems: "center",
+  },
+  cobroHeaderTitle: {
+    fontSize: 32,
+    fontWeight: "bold",
+  },
+  cobroContent: {
+    margin: 20,
+    width: "90%",
+  },
+  cobroRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 18,
+    justifyContent: "space-between",
+  },
+  cobroLabel: {
+    fontSize: 20,
+    fontWeight: "bold",
+  },
+  cobroValue: {
+    fontSize: 20,
+  },
+  cobroInput: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 20,
+    backgroundColor: "#fff",
+    width: 100,
+    textAlign: "center",
+  },
+  cobrarBtn: {
+    backgroundColor: "#38b24d",
+    width: "100%",
+    paddingVertical: 18,
+    alignItems: "center",
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+  },
+  cobrarBtnText: {
     color: "#000",
     fontSize: 28,
     fontWeight: "bold",
