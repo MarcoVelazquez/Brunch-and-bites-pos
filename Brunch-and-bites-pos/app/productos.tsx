@@ -1,88 +1,64 @@
 import React, { useState } from "react";
-import { View, Text, TouchableOpacity, Image, StyleSheet, ScrollView, Modal, TextInput } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, TextInput } from "react-native";
+import ProtectedLayout from './components/ProtectedLayout';
 
-export default function App() {
+interface Producto {
+  nombre: string;
+  precio: string;
+}
+
+export default function ProductosScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
-  const [productoEdit, setProductoEdit] = useState({ nombre: "", precio: "" });
-  const [nuevoProducto, setNuevoProducto] = useState({ nombre: "", precio: "" });
+  const [productoEdit, setProductoEdit] = useState<Producto>({ nombre: "", precio: "" });
+  const [nuevoProducto, setNuevoProducto] = useState<Producto>({ nombre: "", precio: "" });
 
-  // Productos de ejemplo
-  const [productos, setProductos] = useState([
+  const [productos, setProductos] = useState<Producto[]>([
     { nombre: "Traquea", precio: "50" },
     { nombre: "Pata de conejo", precio: "30" },
   ]);
 
-  // Abrir modal de edición y cargar datos del producto
-  const handleEdit = (producto: { nombre: string; precio: string }) => {
+  const handleEdit = (producto: Producto) => {
     setProductoEdit(producto);
     setEditModalVisible(true);
   };
 
-  // Guardar cambios de edición (puedes agregar lógica real aquí)
   const handleGuardarEdit = () => {
     setEditModalVisible(false);
     // Aquí podrías actualizar el producto en tu lista
   };
 
-  // Abrir modal de nuevo producto
   const handleNuevo = () => {
     setNuevoProducto({ nombre: "", precio: "" });
     setModalVisible(true);
   };
 
-  // Guardar nuevo producto
   const handleGuardarNuevo = () => {
     setProductos([...productos, nuevoProducto]);
     setModalVisible(false);
   };
 
   return (
-    <View style={styles.root}>
-      {/* Sidebar */}
-      <View style={styles.sidebar}>
-        <Image
-          source={require("../assets/images/icon.png")}
-          style={styles.logo}
-        />
-        <View style={styles.menuGrid}>
-          <TouchableOpacity style={styles.menuButton}><Text style={styles.menuText}>Caja</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuButton}><Text style={styles.menuText}>Productos</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuButton}><Text style={styles.menuText}>Recibos</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuButton}><Text style={styles.menuText}>Gastos</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuButton}><Text style={styles.menuText}>Costeos</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuButton}><Text style={styles.menuText}>Reportes</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuButton}><Text style={styles.menuText}>Usuarios</Text></TouchableOpacity>
+    <ProtectedLayout title="Productos" requiredPermission="GESTIONAR_PRODUCTOS">
+      <View style={styles.productsTable}>
+        <View style={styles.tableHeader}>
+          <Text style={[styles.tableCell, { flex: 2, fontWeight: "bold", fontSize: 22 }]}>Nombre</Text>
+          <Text style={[styles.tableCell, { flex: 1, fontWeight: "bold", fontSize: 22 }]}>Precio</Text>
+          <TouchableOpacity style={styles.addBtn} onPress={handleNuevo}>
+            <Text style={styles.addBtnText}>＋</Text>
+          </TouchableOpacity>
         </View>
-      </View>
-
-      {/* Main Content */}
-      <View style={styles.main}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Productos</Text>
-        </View>
-        {/* Tabla de productos */}
-        <View style={styles.productsTable}>
-          <View style={styles.tableHeader}>
-            <Text style={[styles.tableCell, { flex: 2, fontWeight: "bold", fontSize: 22 }]}>Nombre</Text>
-            <Text style={[styles.tableCell, { flex: 1, fontWeight: "bold", fontSize: 22 }]}>Precio</Text>
-            <TouchableOpacity style={styles.addBtn} onPress={handleNuevo}>
-              <Text style={styles.addBtnText}>＋</Text>
-            </TouchableOpacity>
-          </View>
-          <ScrollView>
-            {productos.map((producto, idx) => (
-              <View style={styles.tableRow} key={idx}>
-                <Text style={[styles.tableCell, { flex: 2 }]}>{producto.nombre}</Text>
-                <Text style={[styles.tableCell, { flex: 1 }]}>{producto.precio}$</Text>
-                <TouchableOpacity style={styles.editBtn} onPress={() => handleEdit(producto)}>
-                  <Text style={styles.editBtnText}>✏️</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
-          </ScrollView>
-        </View>
+        <ScrollView>
+          {productos.map((producto, idx) => (
+            <View style={styles.tableRow} key={idx}>
+              <Text style={[styles.tableCell, { flex: 2 }]}>{producto.nombre}</Text>
+              <Text style={[styles.tableCell, { flex: 1 }]}>{producto.precio}$</Text>
+              <TouchableOpacity style={styles.editBtn} onPress={() => handleEdit(producto)}>
+                <Text style={styles.editBtnText}>✏️</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+        </ScrollView>
       </View>
 
       {/* Modal Editar Producto */}
@@ -142,73 +118,11 @@ export default function App() {
           </View>
         </View>
       </Modal>
-    </View>
+    </ProtectedLayout>
   );
 }
 
 const styles = StyleSheet.create({
-  // ...existing styles...
-  root: {
-    flex: 1,
-    flexDirection: "row",
-    backgroundColor: "#e6f0fa",
-    borderRadius: 20,
-    margin: 10,
-    overflow: "hidden",
-  },
-  sidebar: {
-    width: 220,
-    backgroundColor: "#a3d6b1",
-    alignItems: "center",
-    paddingTop: 20,
-    paddingBottom: 20,
-    borderTopLeftRadius: 20,
-    borderBottomLeftRadius: 20,
-  },
-  logo: {
-    width: 140,
-    height: 140,
-    marginBottom: 20,
-    borderRadius: 8,
-    backgroundColor: "#fff",
-    resizeMode: "contain",
-  },
-  menuGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "center",
-  },
-  menuButton: {
-    width: 90,
-    height: 60,
-    backgroundColor: "#38b24d",
-    margin: 5,
-    justifyContent: "center",
-    alignItems: "center",
-    borderRadius: 6,
-  },
-  menuText: {
-    color: "#fff",
-    fontWeight: "bold",
-    fontSize: 16,
-  },
-  main: {
-    flex: 1,
-    backgroundColor: "#fff",
-    borderTopRightRadius: 20,
-    borderBottomRightRadius: 20,
-    overflow: "hidden",
-  },
-  header: {
-    backgroundColor: "#a3d6b1",
-    padding: 10,
-    alignItems: "center",
-    borderTopRightRadius: 20,
-  },
-  headerTitle: {
-    fontSize: 32,
-    fontWeight: "bold",
-  },
   productsTable: {
     flex: 1,
     margin: 10,

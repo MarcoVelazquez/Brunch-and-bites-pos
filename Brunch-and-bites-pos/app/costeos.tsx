@@ -1,29 +1,57 @@
 import React, { useState } from "react";
-import { View, Text, TouchableOpacity, Image, StyleSheet, ScrollView, Modal, TextInput } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, TextInput } from "react-native";
+import ProtectedLayout from './components/ProtectedLayout';
 
-export default function Costeos() {
+interface Insumo {
+  insumo: string;
+  precio: string;
+  unidad: string;
+  pUnidad: string;
+  cUtilizada: string;
+  costo: string;
+}
+
+interface Costeo {
+  producto: string;
+  costo: string;
+  insumos: Insumo[];
+  costoTotal: string;
+}
+
+export default function CosteosScreen() {
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [nuevoModalVisible, setNuevoModalVisible] = useState(false);
   const [detalleModalVisible, setDetalleModalVisible] = useState(false);
   const [costeoEdit, setCosteoEdit] = useState({ producto: "", costo: "" });
-  const [nuevoCosteo, setNuevoCosteo] = useState({ producto: "", insumos: [
-    { insumo: "", precio: "", unidad: "", pUnidad: "", cUtilizada: "", costo: "" },
-    { insumo: "", precio: "", unidad: "", pUnidad: "", cUtilizada: "", costo: "" },
-    { insumo: "", precio: "", unidad: "", pUnidad: "", cUtilizada: "", costo: "" },
-    { insumo: "", precio: "", unidad: "", pUnidad: "", cUtilizada: "", costo: "" },
-  ]});
-  const [detalleCosteo, setDetalleCosteo] = useState({
+  const [nuevoCosteo, setNuevoCosteo] = useState<Costeo>({
     producto: "",
-    insumos: [
-      { insumo: "", precio: "", unidad: "", pUnidad: "", cUtilizada: "", costo: "" },
-      { insumo: "", precio: "", unidad: "", pUnidad: "", cUtilizada: "", costo: "" },
-      { insumo: "", precio: "", unidad: "", pUnidad: "", cUtilizada: "", costo: "" },
-      { insumo: "", precio: "", unidad: "", pUnidad: "", cUtilizada: "", costo: "" },
-    ],
-    costoTotal: "",
+    costo: "",
+    insumos: Array(4).fill({
+      insumo: "",
+      precio: "",
+      unidad: "",
+      pUnidad: "",
+      cUtilizada: "",
+      costo: ""
+    }),
+    costoTotal: ""
+  });
+  
+  const [detalleCosteo, setDetalleCosteo] = useState<Costeo>({
+    producto: "",
+    costo: "",
+    insumos: Array(4).fill({
+      insumo: "",
+      precio: "",
+      unidad: "",
+      pUnidad: "",
+      cUtilizada: "",
+      costo: ""
+    }),
+    costoTotal: ""
   });
 
-  const [costeos, setCosteos] = useState([
+  const [costeos, setCosteos] = useState<Costeo[]>([
     {
       producto: "Traquea",
       costo: "30",
@@ -38,12 +66,14 @@ export default function Costeos() {
     {
       producto: "Pata de conejo",
       costo: "15",
-      insumos: [
-        { insumo: "", precio: "", unidad: "", pUnidad: "", cUtilizada: "", costo: "" },
-        { insumo: "", precio: "", unidad: "", pUnidad: "", cUtilizada: "", costo: "" },
-        { insumo: "", precio: "", unidad: "", pUnidad: "", cUtilizada: "", costo: "" },
-        { insumo: "", precio: "", unidad: "", pUnidad: "", cUtilizada: "", costo: "" },
-      ],
+      insumos: Array(4).fill({
+        insumo: "",
+        precio: "",
+        unidad: "",
+        pUnidad: "",
+        cUtilizada: "",
+        costo: ""
+      }),
       costoTotal: ""
     },
   ]);
@@ -64,12 +94,16 @@ export default function Costeos() {
   const handleNuevo = () => {
     setNuevoCosteo({
       producto: "",
-      insumos: [
-        { insumo: "", precio: "", unidad: "", pUnidad: "", cUtilizada: "", costo: "" },
-        { insumo: "", precio: "", unidad: "", pUnidad: "", cUtilizada: "", costo: "" },
-        { insumo: "", precio: "", unidad: "", pUnidad: "", cUtilizada: "", costo: "" },
-        { insumo: "", precio: "", unidad: "", pUnidad: "", cUtilizada: "", costo: "" },
-      ]
+      costo: "",
+      insumos: Array(4).fill({
+        insumo: "",
+        precio: "",
+        unidad: "",
+        pUnidad: "",
+        cUtilizada: "",
+        costo: ""
+      }),
+      costoTotal: ""
     });
     setNuevoModalVisible(true);
   };
@@ -77,22 +111,21 @@ export default function Costeos() {
   // Guardar nuevo costeo
   const handleGuardarNuevo = () => {
     setCosteos([...costeos, {
-      producto: nuevoCosteo.producto,
+      ...nuevoCosteo,
       costo: "",
-      insumos: nuevoCosteo.insumos,
       costoTotal: "",
     }]);
     setNuevoModalVisible(false);
   };
 
   // Abrir modal de detalle costeo
-  const handleDetalle = (costeo: typeof costeos[0]) => {
+  const handleDetalle = (costeo: Costeo) => {
     setDetalleCosteo(costeo);
     setDetalleModalVisible(true);
   };
 
   // Actualizar insumos en nuevo costeo
-  const handleNuevoInsumoChange = (index: number, field: string, value: string) => {
+  const handleNuevoInsumoChange = (index: number, field: keyof Insumo, value: string) => {
     const updatedInsumos = nuevoCosteo.insumos.map((insumo, idx) =>
       idx === index ? { ...insumo, [field]: value } : insumo
     );
@@ -100,53 +133,31 @@ export default function Costeos() {
   };
 
   return (
-    <View style={styles.root}>
-      {/* Sidebar */}
-      <View style={styles.sidebar}>
-        <Image
-          source={require("../assets/images/icon.png")}
-          style={styles.logo}
-        />
-        <View style={styles.menuGrid}>
-          <TouchableOpacity style={styles.menuButton}><Text style={styles.menuText}>Caja</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuButton}><Text style={styles.menuText}>Productos</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuButton}><Text style={styles.menuText}>Recibos</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuButton}><Text style={styles.menuText}>Gastos</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuButton}><Text style={styles.menuText}>Costeos</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuButton}><Text style={styles.menuText}>Reportes</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuButton}><Text style={styles.menuText}>Usuarios</Text></TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Main Content */}
-      <View style={styles.main}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Costeos</Text>
+    <ProtectedLayout title="Costeos" requiredPermission="GESTIONAR_COSTEOS">
+      <View style={styles.productsTable}>
+        {/* Header y botón de agregar */}
+        <View style={styles.tableHeader}>
+          <Text style={[styles.tableCell, { flex: 2, fontWeight: "bold", fontSize: 22 }]}>Producto</Text>
+          <Text style={[styles.tableCell, { flex: 1, fontWeight: "bold", fontSize: 22 }]}>Costo</Text>
           <TouchableOpacity style={styles.addBtn} onPress={handleNuevo}>
             <Text style={styles.addBtnText}>＋</Text>
           </TouchableOpacity>
         </View>
-        {/* Tabla de costeos */}
-        <View style={styles.productsTable}>
-          <View style={styles.tableHeader}>
-            <Text style={[styles.tableCell, { flex: 2, fontWeight: "bold", fontSize: 22 }]}>Producto</Text>
-            <Text style={[styles.tableCell, { flex: 1, fontWeight: "bold", fontSize: 22 }]}>Costo</Text>
-          </View>
-          <ScrollView>
-            {costeos.map((costeo, idx) => (
-              <TouchableOpacity key={idx} onPress={() => handleDetalle(costeo)}>
-                <View style={styles.tableRow}>
-                  <Text style={[styles.tableCell, { flex: 2 }]}>{costeo.producto}</Text>
-                  <Text style={[styles.tableCell, { flex: 1 }]}>{costeo.costo}$</Text>
-                  <TouchableOpacity style={styles.editBtn} onPress={() => handleEdit(costeo)}>
-                    <Text style={styles.editBtnText}>✏️</Text>
-                  </TouchableOpacity>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
+
+        {/* Lista de costeos */}
+        <ScrollView>
+          {costeos.map((costeo, idx) => (
+            <TouchableOpacity key={idx} onPress={() => handleDetalle(costeo)}>
+              <View style={styles.tableRow}>
+                <Text style={[styles.tableCell, { flex: 2 }]}>{costeo.producto}</Text>
+                <Text style={[styles.tableCell, { flex: 1 }]}>{costeo.costo}$</Text>
+                <TouchableOpacity style={styles.editBtn} onPress={() => handleEdit(costeo)}>
+                  <Text style={styles.editBtnText}>✏️</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
       </View>
 
       {/* Modal Detalle Costeo */}
@@ -255,6 +266,7 @@ export default function Costeos() {
           </View>
         </View>
       </Modal>
+
       {/* Modal Editar Costeo */}
       <Modal visible={editModalVisible} transparent animationType="slide">
         <View style={styles.modalContainer}>
@@ -282,8 +294,6 @@ export default function Costeos() {
                 <Text style={styles.detalleCellHeader}>C/Utilizada</Text>
                 <Text style={styles.detalleCellHeader}>Costo</Text>
               </View>
-              {/* Si quieres editar insumos, agrega lógica aquí para mostrar y editar insumos */}
-              {/* Ejemplo para 4 insumos vacíos */}
               {[0,1,2,3].map(idx => (
                 <View style={styles.detalleTableRow} key={idx}>
                   <TextInput style={styles.detalleInput} />
@@ -301,94 +311,11 @@ export default function Costeos() {
           </View>
         </View>
       </Modal>
-    </View>
+    </ProtectedLayout>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    flexDirection: "row",
-    backgroundColor: "#e6f0fa",
-    borderRadius: 20,
-    margin: 10,
-    overflow: "hidden",
-  },
-  sidebar: {
-    width: 220,
-    backgroundColor: "#a3d6b1",
-    alignItems: "center",
-    paddingTop: 20,
-    paddingBottom: 20,
-    borderTopLeftRadius: 20,
-    borderBottomLeftRadius: 20,
-  },
-  logo: {
-    width: 140,
-    height: 140,
-    marginBottom: 20,
-    borderRadius: 8,
-    backgroundColor: "#fff",
-    resizeMode: "contain",
-  },
-  menuGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "center",
-  },
-  menuButton: {
-    width: 90,
-    height: 60,
-    backgroundColor: "#38b24d",
-    margin: 5,
-    justifyContent: "center",
-    alignItems: "center",
-    borderRadius: 6,
-  },
-  menuText: {
-    color: "#fff",
-    fontWeight: "bold",
-    fontSize: 16,
-  },
-  main: {
-    flex: 1,
-    backgroundColor: "#fff",
-    borderTopRightRadius: 20,
-    borderBottomRightRadius: 20,
-    overflow: "hidden",
-  },
-  header: {
-    backgroundColor: "#a3d6b1",
-    padding: 10,
-    alignItems: "center",
-    borderTopRightRadius: 20,
-    flexDirection: "row",
-    justifyContent: "center",
-  },
-  headerTitle: {
-    fontSize: 32,
-    fontWeight: "bold",
-    flex: 1,
-    textAlign: "center",
-  },
-  addBtn: {
-    width: 32,
-    height: 32,
-    backgroundColor: "#38b24d",
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
-    marginLeft: 10,
-    position: "absolute",
-    right: 16,
-    top: 10,
-  },
-  addBtnText: {
-    color: "#fff",
-    fontSize: 24,
-    fontWeight: "bold",
-    marginTop: -2,
-  },
   productsTable: {
     flex: 1,
     margin: 10,
@@ -428,6 +355,21 @@ const styles = StyleSheet.create({
   editBtnText: {
     color: "#fff",
     fontSize: 20,
+  },
+  addBtn: {
+    width: 32,
+    height: 32,
+    backgroundColor: "#38b24d",
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 10,
+  },
+  addBtnText: {
+    color: "#fff",
+    fontSize: 24,
+    fontWeight: "bold",
+    marginTop: -2,
   },
   // Modal styles
   modalContainer: {

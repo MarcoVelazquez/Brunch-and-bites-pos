@@ -1,24 +1,31 @@
 import React, { useState } from "react";
-import { View, Text, TouchableOpacity, Image, StyleSheet, ScrollView, Modal, TextInput } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, TextInput } from "react-native";
+import ProtectedLayout from './components/ProtectedLayout';
 
-export default function Gastos() {
+interface Gasto {
+  titulo: string;
+  fecha: string;
+  costo: string;
+  descripcion: string;
+}
+
+export default function GastosScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [nuevoModalVisible, setNuevoModalVisible] = useState(false);
-  const [gastoSeleccionado, setGastoSeleccionado] = useState({
+  const [gastoSeleccionado, setGastoSeleccionado] = useState<Gasto>({
     titulo: "",
     fecha: "",
     costo: "",
     descripcion: "",
   });
-  const [nuevoGasto, setNuevoGasto] = useState({
+  const [nuevoGasto, setNuevoGasto] = useState<Gasto>({
     fecha: "22/08/2025",
     titulo: "",
     costo: "",
     descripcion: "",
   });
 
-  // Ejemplo de gastos
-  const [gastos, setGastos] = useState([
+  const [gastos, setGastos] = useState<Gasto[]>([
     {
       titulo: "Traqueas",
       fecha: "22/08/2025",
@@ -33,7 +40,7 @@ export default function Gastos() {
     },
   ]);
 
-  const handleVerGasto = (gasto: typeof gastos[0]) => {
+  const handleVerGasto = (gasto: Gasto) => {
     setGastoSeleccionado(gasto);
     setModalVisible(true);
   };
@@ -54,52 +61,27 @@ export default function Gastos() {
   };
 
   return (
-    <View style={styles.root}>
-      {/* Sidebar */}
-      <View style={styles.sidebar}>
-        <Image
-          source={require("../assets/images/icon.png")}
-          style={styles.logo}
-        />
-        <View style={styles.menuGrid}>
-          <TouchableOpacity style={styles.menuButton}><Text style={styles.menuText}>Caja</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuButton}><Text style={styles.menuText}>Productos</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuButton}><Text style={styles.menuText}>Recibos</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuButton}><Text style={styles.menuText}>Gastos</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuButton}><Text style={styles.menuText}>Costeos</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuButton}><Text style={styles.menuText}>Reportes</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuButton}><Text style={styles.menuText}>Usuarios</Text></TouchableOpacity>
+    <ProtectedLayout title="Gastos" requiredPermission="GESTIONAR_GASTOS">
+      <View style={styles.productsTable}>
+        <View style={styles.tableHeader}>
+          <Text style={[styles.tableCell, { flex: 1.2, fontWeight: "bold", fontSize: 22 }]}>Fecha</Text>
+          <Text style={[styles.tableCell, { flex: 1, fontWeight: "bold", fontSize: 22 }]}>Cantidad</Text>
+          <Text style={[styles.tableCell, { flex: 1.5, fontWeight: "bold", fontSize: 22 }]}>Titulo</Text>
+          <TouchableOpacity style={styles.addBtn} onPress={handleNuevoGasto}>
+            <Text style={styles.addBtnText}>＋</Text>
+          </TouchableOpacity>
         </View>
-      </View>
-
-      {/* Main Content */}
-      <View style={styles.main}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Gastos</Text>
-        </View>
-        {/* Tabla de gastos */}
-        <View style={styles.productsTable}>
-          <View style={styles.tableHeader}>
-            <Text style={[styles.tableCell, { flex: 1.2, fontWeight: "bold", fontSize: 22 }]}>Fecha</Text>
-            <Text style={[styles.tableCell, { flex: 1, fontWeight: "bold", fontSize: 22 }]}>Cantidad</Text>
-            <Text style={[styles.tableCell, { flex: 1.5, fontWeight: "bold", fontSize: 22 }]}>Titulo</Text>
-            <TouchableOpacity style={styles.addBtn} onPress={handleNuevoGasto}>
-              <Text style={styles.addBtnText}>＋</Text>
+        <ScrollView>
+          {gastos.map((gasto, idx) => (
+            <TouchableOpacity key={idx} onPress={() => handleVerGasto(gasto)}>
+              <View style={styles.tableRow}>
+                <Text style={[styles.tableCell, { flex: 1.2 }]}>{gasto.fecha}</Text>
+                <Text style={[styles.tableCell, { flex: 1 }]}>{gasto.costo}</Text>
+                <Text style={[styles.tableCell, { flex: 1.5 }]}>{gasto.titulo}</Text>
+              </View>
             </TouchableOpacity>
-          </View>
-          <ScrollView>
-            {gastos.map((gasto, idx) => (
-              <TouchableOpacity key={idx} onPress={() => handleVerGasto(gasto)}>
-                <View style={styles.tableRow}>
-                  <Text style={[styles.tableCell, { flex: 1.2 }]}>{gasto.fecha}</Text>
-                  <Text style={[styles.tableCell, { flex: 1 }]}>{gasto.costo}</Text>
-                  <Text style={[styles.tableCell, { flex: 1.5 }]}>{gasto.titulo}</Text>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
+          ))}
+        </ScrollView>
       </View>
 
       {/* Modal Datos del Gasto */}
@@ -160,73 +142,11 @@ export default function Gastos() {
           </View>
         </View>
       </Modal>
-    </View>
+    </ProtectedLayout>
   );
 }
 
 const styles = StyleSheet.create({
-  // ...existing styles...
-  root: {
-    flex: 1,
-    flexDirection: "row",
-    backgroundColor: "#e6f0fa",
-    borderRadius: 20,
-    margin: 10,
-    overflow: "hidden",
-  },
-  sidebar: {
-    width: 220,
-    backgroundColor: "#a3d6b1",
-    alignItems: "center",
-    paddingTop: 20,
-    paddingBottom: 20,
-    borderTopLeftRadius: 20,
-    borderBottomLeftRadius: 20,
-  },
-  logo: {
-    width: 140,
-    height: 140,
-    marginBottom: 20,
-    borderRadius: 8,
-    backgroundColor: "#fff",
-    resizeMode: "contain",
-  },
-  menuGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "center",
-  },
-  menuButton: {
-    width: 90,
-    height: 60,
-    backgroundColor: "#38b24d",
-    margin: 5,
-    justifyContent: "center",
-    alignItems: "center",
-    borderRadius: 6,
-  },
-  menuText: {
-    color: "#fff",
-    fontWeight: "bold",
-    fontSize: 16,
-  },
-  main: {
-    flex: 1,
-    backgroundColor: "#fff",
-    borderTopRightRadius: 20,
-    borderBottomRightRadius: 20,
-    overflow: "hidden",
-  },
-  header: {
-    backgroundColor: "#a3d6b1",
-    padding: 10,
-    alignItems: "center",
-    borderTopRightRadius: 20,
-  },
-  headerTitle: {
-    fontSize: 32,
-    fontWeight: "bold",
-  },
   productsTable: {
     flex: 1,
     margin: 10,
