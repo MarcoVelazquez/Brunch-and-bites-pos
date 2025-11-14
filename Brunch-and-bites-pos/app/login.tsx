@@ -1,75 +1,132 @@
 import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, StyleSheet, Alert, ScrollView, KeyboardAvoidingView, Platform, useWindowDimensions, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from './contexts/AuthContext';
+import { validateUsername, hashPassword, verifyPassword } from './lib/auth';
+import { openDB, clearAllUsers, createFreshAdmin, createUserWithAllPermissions, getAllUsers, getUserByUsername } from './lib/database.refactor';
+import { LoadingScreen } from './components/LoadingScreen';
+import Text from './components/Text';
+import Button from './components/Button';
+import Input from './components/Input';
+import Card from './components/Card';
 
 export default function LoginScreen() {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    
+    const { width } = useWindowDimensions();
+    const isSmall = width < 400;
     const router = useRouter();
-    const { login } = useAuth();
+    
+    const { login, isLoading: authLoading } = useAuth();
 
     const handleLogin = async () => {
         if (!username || !password) {
-            Alert.alert('Error', 'Por favor ingresa usuario y contraseña');
+            Alert.alert('⚠️ Campos incompletos', 'Por favor ingresa tu usuario y contraseña para continuar');
             return;
+        }
+
+        // DEBUG: Saltarse la validación de username para casos de test
+        if (username !== 'test' && username !== 'admin' && username !== 'Gina') {
+            const usernameValidation = validateUsername(username);
+            if (!usernameValidation.isValid) {
+                Alert.alert('❌ Usuario inválido', usernameValidation.message || 'El usuario ingresado no es válido');
+                return;
+            }
         }
 
         setIsLoading(true);
         try {
             const success = await login(username, password);
             if (success) {
-                router.replace('./index');
+                router.push('/caja');
             } else {
-                Alert.alert('Error', 'Usuario o contraseña incorrectos');
+                Alert.alert(
+                    '🔒 Acceso denegado', 
+                    'Usuario o contraseña incorrectos. Por favor verifica tus credenciales e intenta nuevamente.'
+                );
             }
         } catch (error) {
             console.error('Error during login:', error);
-            Alert.alert('Error', 'Hubo un problema al intentar iniciar sesión');
+            Alert.alert(
+                '⚠️ Error de conexión', 
+                'Hubo un problema al intentar iniciar sesión. Por favor intenta nuevamente.'
+            );
         } finally {
             setIsLoading(false);
         }
     };
 
+    if (authLoading) {
+        return <LoadingScreen message="Iniciando aplicación..." />;
+    }
+
     return (
-        <View style={styles.container}>
-            <View style={styles.formContainer}>
-                <Text style={styles.title}>Iniciar Sesión</Text>
+        <KeyboardAvoidingView
+            style={styles.container}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+            <ScrollView contentContainerStyle={styles.scrollBody} keyboardShouldPersistTaps="handled">
+            <Card variant="elevated" style={styles.formContainer}>
+                <Image 
+                    source={require('../assets/images/logo.jpeg')}
+                    style={[styles.logo, isSmall && { width: 88, height: 88, marginBottom: 16 }]}
+                />
                 
-                <TextInput
-                    style={styles.input}
-                    placeholder="Usuario"
+                <Text variant="h1" align="center" style={styles.welcomeText}>👋 Bienvenido</Text>
+                <Text 
+                    variant="body" 
+                    color="#666" 
+                    align="center" 
+                    style={styles.subtitle}
+                >
+                    Ingresa tus credenciales para acceder al sistema
+                </Text>
+                
+                <Input
+                    label="👤 Usuario"
+                    placeholder="Tu nombre de usuario"
                     value={username}
                     onChangeText={setUsername}
                     autoCapitalize="none"
                     autoCorrect={false}
-                    editable={!isLoading}
+                    disabled={isLoading}
                 />
 
-                <TextInput
-                    style={styles.input}
-                    placeholder="Contraseña"
+                <Input
+                    label="🔒 Contraseña"
+                    placeholder="Tu contraseña segura"
                     value={password}
                     onChangeText={setPassword}
                     secureTextEntry
                     autoCapitalize="none"
                     autoCorrect={false}
-                    editable={!isLoading}
+                    disabled={isLoading}
                 />
 
-                <TouchableOpacity
-                    style={[styles.button, isLoading && styles.buttonDisabled]}
+                <Button
+                    title={isLoading ? '⏳ Iniciando sesión...' : '🚀 Iniciar Sesión'}
                     onPress={handleLogin}
                     disabled={isLoading}
-                >
-                    <Text style={styles.buttonText}>
-                        {isLoading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
-                    </Text>
-                </TouchableOpacity>
-            </View>
-        </View>
+                    loading={isLoading}
+                    variant="primary"
+                    style={styles.loginButton}
+                />
+
+
+
+
+
+
+                <Text variant="small" align="center" style={styles.footer}>
+                    🍳 Brunch & Bites POS - v1.0.0
+                </Text>
+                <Text variant="small" align="center" style={styles.footerNote}>
+                    Sistema de punto de venta
+                </Text>
+            </Card>
+            </ScrollView>
+        </KeyboardAvoidingView>
     );
 }
 
@@ -77,55 +134,45 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#f5f5f5',
-        justifyContent: 'center',
-        alignItems: 'center',
         padding: 20,
+    },
+    scrollBody: {
+        flexGrow: 1,
+        justifyContent: 'flex-start',
+        alignItems: 'center',
+        paddingTop: 50,
     },
     formContainer: {
         width: '100%',
         maxWidth: 400,
         backgroundColor: 'white',
-        padding: 20,
-        borderRadius: 10,
-        shadowColor: '#000',
-        shadowOffset: {
-            width: 0,
-            height: 2,
-        },
-        shadowOpacity: 0.25,
-        shadowRadius: 3.84,
-        elevation: 5,
-    },
-    title: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        marginBottom: 20,
-        textAlign: 'center',
-        color: '#333',
-    },
-    input: {
-        height: 50,
-        borderWidth: 1,
-        borderColor: '#ddd',
-        borderRadius: 8,
-        paddingHorizontal: 15,
-        marginBottom: 15,
-        fontSize: 16,
-        backgroundColor: '#fff',
-    },
-    button: {
-        backgroundColor: '#007AFF',
-        padding: 15,
-        borderRadius: 8,
+        padding: 32,
         alignItems: 'center',
-        marginTop: 10,
+        marginBottom: 100,
     },
-    buttonDisabled: {
-        backgroundColor: '#999',
+    logo: {
+        width: 120,
+        height: 120,
+        marginBottom: 24,
+        borderRadius: 60,
     },
-    buttonText: {
-        color: 'white',
-        fontSize: 16,
-        fontWeight: 'bold',
+    welcomeText: {
+        marginBottom: 8,
+    },
+    subtitle: {
+        marginTop: 8,
+        marginBottom: 24,
+    },
+    loginButton: {
+        width: '100%',
+        marginTop: 16,
+    },
+    footer: {
+        marginTop: 24,
+        opacity: 0.6,
+    },
+    footerNote: {
+        marginTop: 4,
+        opacity: 0.5,
     },
 });

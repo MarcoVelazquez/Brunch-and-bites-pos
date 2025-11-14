@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, StyleSheet, Alert } from "react-native";
+import { View, StyleSheet, Alert, useWindowDimensions } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "./contexts/AuthContext";
 import { getAllUsers, getAllPermissions, getUserPermissions, assignPermissionToUser, revokePermissionFromUser } from "./lib/database.refactor";
@@ -14,6 +14,9 @@ interface UserPermissions {
 }
 
 export default function PermissionsScreen() {
+    const { width } = useWindowDimensions();
+    const isMobile = width < 768;
+    
     const [users, setUsers] = useState<User[]>([]);
     const [permissions, setPermissions] = useState<Permission[]>([]);
     const [userPermissions, setUserPermissions] = useState<UserPermissions>({});
@@ -95,7 +98,7 @@ export default function PermissionsScreen() {
 
     return (
         <ProtectedLayout title="Gestión de Permisos" requiredPermission="DAR_PERMISOS">
-            <View style={styles.content}>
+            <View style={[styles.content, isMobile && styles.contentMobile]}>
                 <UserList 
                     users={users}
                     selectedUserId={selectedUser?.id}
@@ -122,5 +125,10 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         padding: 20,
         gap: 20,
+    },
+    contentMobile: {
+        flexDirection: 'column',
+        padding: 10,
+        gap: 10,
     },
 });

@@ -1,66 +1,133 @@
-import React, { useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, TextInput } from "react-native";
+﻿import React, { useState, useEffect } from "react";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, TextInput, Alert, useWindowDimensions } from "react-native";
 import ProtectedLayout from './components/ProtectedLayout';
-
-interface Producto {
-  nombre: string;
-  precio: string;
-}
+import { openDB, getAllProducts, addProduct, updateProduct, deleteProduct } from './lib/database.refactor';
+import type { Product } from './lib/database.types';
 
 export default function ProductosScreen() {
+  const { width } = useWindowDimensions();
+  const isMobile = width < 768;
+  const isSmallMobile = width < 400;
+  
   const [modalVisible, setModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
-  const [productoEdit, setProductoEdit] = useState<Producto>({ nombre: "", precio: "" });
-  const [nuevoProducto, setNuevoProducto] = useState<Producto>({ nombre: "", precio: "" });
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [productoEdit, setProductoEdit] = useState<Product>({ id: 0, name: "", price: 0, cost: 0 });
+  const [nuevoProducto, setNuevoProducto] = useState({ name: "", price: "", cost: "" });
+  const [productos, setProductos] = useState<Product[]>([]);
+  const [productoToDelete, setProductoToDelete] = useState<Product | null>(null);
 
-  const [productos, setProductos] = useState<Producto[]>([
-    { nombre: "Traquea", precio: "50" },
-    { nombre: "Pata de conejo", precio: "30" },
-  ]);
+  const loadProducts = async () => {
+    try {
+      const db = await openDB();
+      const productsList = await getAllProducts(db);
+      setProductos(productsList);
+    } catch (error) {
+      console.error('Error loading products:', error);
+      Alert.alert('Error', 'No se pudieron cargar los productos. Intenta recargar la aplicación.');
+    }
+  };
 
-  const handleEdit = (producto: Producto) => {
+  useEffect(() => {
+    loadProducts();
+  }, []);
+
+  const handleEdit = (producto: Product) => {
     setProductoEdit(producto);
     setEditModalVisible(true);
   };
 
-  const handleGuardarEdit = () => {
-    setEditModalVisible(false);
-    // Aquí podrías actualizar el producto en tu lista
+  const handleGuardarEdit = async () => {
+    try {
+      if (!productoEdit.name.trim() || productoEdit.price <= 0 || productoEdit.cost < 0) {
+        Alert.alert('Error', 'Por favor complete todos los campos correctamente');
+        return;
+      }
+      const db = await openDB();
+      await updateProduct(db, productoEdit.id, productoEdit.name, productoEdit.price, productoEdit.cost);
+      setEditModalVisible(false);
+      await loadProducts();
+      Alert.alert('Éxito', 'Producto actualizado correctamente');
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo actualizar el producto');
+      console.error('Error updating product:', error);
+    }
   };
 
   const handleNuevo = () => {
-    setNuevoProducto({ nombre: "", precio: "" });
+    setNuevoProducto({ name: "", price: "", cost: "" });
     setModalVisible(true);
   };
 
-  const handleGuardarNuevo = () => {
-    setProductos([...productos, nuevoProducto]);
-    setModalVisible(false);
+  const handleGuardarNuevo = async () => {
+    try {
+      const price = parseFloat(nuevoProducto.price);
+      const cost = parseFloat(nuevoProducto.cost);
+      if (!nuevoProducto.name.trim() || isNaN(price) || price <= 0 || isNaN(cost) || cost < 0) {
+        Alert.alert('Error', 'Por favor complete todos los campos correctamente');
+        return;
+      }
+      const db = await openDB();
+      await addProduct(db, nuevoProducto.name, price, cost);
+      setModalVisible(false);
+      setNuevoProducto({ name: "", price: "", cost: "" });
+      await loadProducts();
+      Alert.alert('Éxito', 'Producto agregado correctamente');
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo agregar el producto');
+      console.error('Error adding product:', error);
+    }
+  };
+
+  const handleDelete = (producto: Product) => {
+    setProductoToDelete(producto);
+    setDeleteModalVisible(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!productoToDelete) return;
+    try {
+      const db = await openDB();
+      await deleteProduct(db, productoToDelete.id);
+      setDeleteModalVisible(false);
+      setProductoToDelete(null);
+      await loadProducts();
+      Alert.alert('Éxito', 'Producto eliminado correctamente');
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo eliminar el producto');
+      console.error('Error deleting product:', error);
+    }
   };
 
   return (
     <ProtectedLayout title="Productos" requiredPermission="GESTIONAR_PRODUCTOS">
       <View style={styles.productsTable}>
         <View style={styles.tableHeader}>
-          <Text style={[styles.tableCell, { flex: 2, fontWeight: "bold", fontSize: 22 }]}>Nombre</Text>
-          <Text style={[styles.tableCell, { flex: 1, fontWeight: "bold", fontSize: 22 }]}>Precio</Text>
-          <TouchableOpacity style={styles.addBtn} onPress={handleNuevo}>
-            <Text style={styles.addBtnText}>＋</Text>
+          <Text style={[styles.tableCell, { flex: 2, fontWeight: "bold", fontSize: isMobile ? 14 : 22 }]}>Nombre</Text>
+          <Text style={[styles.tableCell, { flex: 1, fontWeight: "bold", fontSize: isMobile ? 14 : 22 }]}>Precio</Text>
+          <Text style={[styles.tableCell, { flex: 1, fontWeight: "bold", fontSize: isMobile ? 14 : 22 }]}>Costo</Text>
+          <TouchableOpacity style={[styles.addBtn, isMobile && { width: 28, height: 28 }]} onPress={handleNuevo}>
+            <Text style={[styles.addBtnText, isMobile && { fontSize: 20 }]}>＋</Text>
           </TouchableOpacity>
         </View>
         <ScrollView>
           {productos.map((producto, idx) => (
-            <View style={styles.tableRow} key={idx}>
-              <Text style={[styles.tableCell, { flex: 2 }]}>{producto.nombre}</Text>
-              <Text style={[styles.tableCell, { flex: 1 }]}>{producto.precio}$</Text>
-              <TouchableOpacity style={styles.editBtn} onPress={() => handleEdit(producto)}>
-                <Text style={styles.editBtnText}>✏️</Text>
-              </TouchableOpacity>
+            <View style={[styles.tableRow, isMobile && { paddingVertical: 8 }]} key={idx}>
+              <Text style={[styles.tableCell, { flex: 2, fontSize: isMobile ? 14 : 18 }]} numberOfLines={1}>{producto.name}</Text>
+              <Text style={[styles.tableCell, { flex: 1, fontSize: isMobile ? 14 : 18 }]}>${producto.price.toFixed(2)}</Text>
+              <Text style={[styles.tableCell, { flex: 1, fontSize: isMobile ? 14 : 18 }]}>${producto.cost.toFixed(2)}</Text>
+              <View style={styles.actionButtons}>
+                <TouchableOpacity style={[styles.editBtn, isMobile && { width: 28, height: 28 }]} onPress={() => handleEdit(producto)}>
+                  <Text style={[styles.editBtnText, isMobile && { fontSize: 14 }]}>✏️</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.deleteBtn, isMobile && { width: 28, height: 28 }]} onPress={() => handleDelete(producto)}>
+                  <Text style={[styles.deleteBtnText, isMobile && { fontSize: 14 }]}>🗑️</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           ))}
         </ScrollView>
       </View>
-
       {/* Modal Editar Producto */}
       <Modal visible={editModalVisible} transparent animationType="slide">
         <View style={styles.modalContainer}>
@@ -72,20 +139,32 @@ export default function ProductosScreen() {
               <Text style={styles.editLabel}>Nombre</Text>
               <TextInput
                 style={styles.editInput}
-                value={productoEdit.nombre}
-                onChangeText={text => setProductoEdit({ ...productoEdit, nombre: text })}
+                value={productoEdit.name}
+                onChangeText={text => setProductoEdit({ ...productoEdit, name: text })}
               />
               <Text style={styles.editLabel}>Precio</Text>
               <TextInput
                 style={styles.editInput}
-                value={productoEdit.precio}
-                onChangeText={text => setProductoEdit({ ...productoEdit, precio: text })}
+                value={productoEdit.price.toString()}
+                onChangeText={text => setProductoEdit({ ...productoEdit, price: parseFloat(text) || 0 })}
+                keyboardType="numeric"
+              />
+              <Text style={styles.editLabel}>Costo</Text>
+              <TextInput
+                style={styles.editInput}
+                value={productoEdit.cost.toString()}
+                onChangeText={text => setProductoEdit({ ...productoEdit, cost: parseFloat(text) || 0 })}
                 keyboardType="numeric"
               />
             </View>
-            <TouchableOpacity style={styles.guardarBtn} onPress={handleGuardarEdit}>
-              <Text style={styles.guardarBtnText}>Guardar</Text>
-            </TouchableOpacity>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={[styles.guardarBtn, { backgroundColor: '#dc3545' }]} onPress={() => setEditModalVisible(false)}>
+                <Text style={styles.guardarBtnText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.guardarBtn} onPress={handleGuardarEdit}>
+                <Text style={styles.guardarBtnText}>Guardar</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -101,20 +180,56 @@ export default function ProductosScreen() {
               <Text style={styles.editLabel}>Nombre</Text>
               <TextInput
                 style={styles.editInput}
-                value={nuevoProducto.nombre}
-                onChangeText={text => setNuevoProducto({ ...nuevoProducto, nombre: text })}
+                value={nuevoProducto.name}
+                onChangeText={text => setNuevoProducto({ ...nuevoProducto, name: text })}
               />
               <Text style={styles.editLabel}>Precio</Text>
               <TextInput
                 style={styles.editInput}
-                value={nuevoProducto.precio}
-                onChangeText={text => setNuevoProducto({ ...nuevoProducto, precio: text })}
+                value={nuevoProducto.price}
+                onChangeText={text => setNuevoProducto({ ...nuevoProducto, price: text })}
+                keyboardType="numeric"
+              />
+              <Text style={styles.editLabel}>Costo</Text>
+              <TextInput
+                style={styles.editInput}
+                value={nuevoProducto.cost}
+                onChangeText={text => setNuevoProducto({ ...nuevoProducto, cost: text })}
                 keyboardType="numeric"
               />
             </View>
-            <TouchableOpacity style={styles.guardarBtn} onPress={handleGuardarNuevo}>
-              <Text style={styles.guardarBtnText}>Guardar</Text>
-            </TouchableOpacity>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={[styles.guardarBtn, { backgroundColor: '#dc3545' }]} onPress={() => setModalVisible(false)}>
+                <Text style={styles.guardarBtnText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.guardarBtn} onPress={handleGuardarNuevo}>
+                <Text style={styles.guardarBtnText}>Guardar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal Confirmar Eliminar */}
+      <Modal visible={deleteModalVisible} transparent animationType="slide">
+        <View style={styles.modalContainer}>
+          <View style={styles.editBox}>
+            <View style={styles.editHeader}>
+              <Text style={styles.editHeaderTitle}>Confirmar eliminación</Text>
+            </View>
+            <View style={styles.editContent}>
+              <Text style={styles.confirmText}>
+                ¿Está seguro de que desea eliminar el producto "{productoToDelete?.name}"?
+              </Text>
+            </View>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={[styles.guardarBtn, { backgroundColor: '#6c757d' }]} onPress={() => setDeleteModalVisible(false)}>
+                <Text style={styles.guardarBtnText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.guardarBtn, { backgroundColor: '#dc3545' }]} onPress={confirmDelete}>
+                <Text style={styles.guardarBtnText}>Eliminar</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -136,7 +251,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: "#ccc",
     paddingVertical: 8,
-    paddingHorizontal: 10,
+    paddingHorizontal: 6,
     backgroundColor: "#fff",
   },
   tableRow: {
@@ -145,10 +260,15 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: "#f0f0f0",
     paddingVertical: 10,
-    paddingHorizontal: 10,
+    paddingHorizontal: 6,
   },
   tableCell: {
     fontSize: 18,
+    paddingHorizontal: 4,
+  },
+  actionButtons: {
+    flexDirection: "row",
+    gap: 6,
   },
   addBtn: {
     width: 32,
@@ -168,17 +288,27 @@ const styles = StyleSheet.create({
   editBtn: {
     width: 32,
     height: 32,
-    backgroundColor: "#38b24d",
+    backgroundColor: "#007bff",
     borderRadius: 16,
     justifyContent: "center",
     alignItems: "center",
-    marginLeft: 10,
   },
   editBtnText: {
     color: "#fff",
-    fontSize: 20,
+    fontSize: 16,
   },
-  // Modal styles
+  deleteBtn: {
+    width: 32,
+    height: 32,
+    backgroundColor: "#dc3545",
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  deleteBtnText: {
+    color: "#fff",
+    fontSize: 16,
+  },
   modalContainer: {
     flex: 1,
     justifyContent: "center",
@@ -199,7 +329,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   editHeaderTitle: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: "bold",
   },
   editContent: {
@@ -207,7 +337,7 @@ const styles = StyleSheet.create({
     width: "90%",
   },
   editLabel: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "bold",
     marginBottom: 8,
   },
@@ -217,22 +347,29 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    fontSize: 20,
+    fontSize: 16,
     backgroundColor: "#fff",
     width: "100%",
     marginBottom: 18,
   },
+  modalButtons: {
+    flexDirection: "row",
+    width: "100%",
+  },
   guardarBtn: {
     backgroundColor: "#38b24d",
-    width: "100%",
+    flex: 1,
     paddingVertical: 18,
     alignItems: "center",
-    borderBottomLeftRadius: 12,
-    borderBottomRightRadius: 12,
   },
   guardarBtnText: {
-    color: "#000",
-    fontSize: 28,
+    color: "#fff",
+    fontSize: 18,
     fontWeight: "bold",
+  },
+  confirmText: {
+    fontSize: 16,
+    textAlign: "center",
+    marginBottom: 20,
   },
 });

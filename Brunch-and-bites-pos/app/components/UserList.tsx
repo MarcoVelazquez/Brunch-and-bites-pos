@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, ScrollView, StyleSheet } from 'react-native';
+import { View, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import type { User } from '../lib/database.types';
 import AppText from './Text';
 import Button from './Button';
@@ -12,9 +12,12 @@ interface UserListProps {
 }
 
 export default function UserList({ users, selectedUserId, onSelectUser }: UserListProps) {
+    const { width } = useWindowDimensions();
+    const isMobile = width < 768;
+    
     return (
-        <Card style={styles.container}>
-            <AppText variant="h2">Usuarios</AppText>
+        <Card style={isMobile ? styles.containerMobile : styles.container}>
+            <AppText variant="h2" style={isMobile ? { fontSize: 20 } : undefined}>Usuarios</AppText>
             <ScrollView style={styles.scroll}>
                 {users.map(user => (
                     <Button
@@ -22,6 +25,7 @@ export default function UserList({ users, selectedUserId, onSelectUser }: UserLi
                         title={`${user.username}${user.is_admin ? ' (Admin)' : ''}`}
                         variant={selectedUserId === user.id ? "primary" : "secondary"}
                         style={styles.userItem}
+                        textStyle={isMobile ? { fontSize: 14 } : undefined}
                         onPress={() => onSelectUser(user)}
                     />
                 ))}
@@ -34,6 +38,11 @@ const styles = StyleSheet.create({
     container: {
         width: 250,
         padding: 15,
+    },
+    containerMobile: {
+        width: '100%',
+        maxHeight: 200,
+        padding: 10,
     },
     scroll: {
         flex: 1,

@@ -1,0 +1,41 @@
+﻿{
+  "expo": {
+    "name": "Brunch-and-bites-pos",
+    "slug": "brunch-and-bites-pos", 
+    "version": "1.0.0",
+    "sdkVersion": "54.0.0",
+    "orientation": "landscape",
+    "icon": "./assets/images/logo.jpeg",
+    "scheme": "brunchandbites",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "updates": {
+      "enabled": false,
+      "checkAutomatically": "ON_ERROR_RECOVERY"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      }
+    },
+    "web": {
+      "favicon": "./assets/images/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

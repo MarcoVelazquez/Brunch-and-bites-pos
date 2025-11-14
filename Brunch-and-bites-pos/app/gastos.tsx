@@ -1,85 +1,154 @@
-import React, { useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, TextInput } from "react-native";
+import React, { useState, useEffect } from "react";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, TextInput, Alert, useWindowDimensions } from "react-native";
 import ProtectedLayout from './components/ProtectedLayout';
-
-interface Gasto {
-  titulo: string;
-  fecha: string;
-  costo: string;
-  descripcion: string;
-}
+import { openDB, getAllExpenses, addExpense, updateExpense, deleteExpense } from './lib/database.refactor';
+import type { Expense } from './lib/database.types';
 
 export default function GastosScreen() {
+  const { width } = useWindowDimensions();
+  const isMobile = width < 768;
+  const isSmallMobile = width < 400;
+  
   const [modalVisible, setModalVisible] = useState(false);
   const [nuevoModalVisible, setNuevoModalVisible] = useState(false);
-  const [gastoSeleccionado, setGastoSeleccionado] = useState<Gasto>({
-    titulo: "",
-    fecha: "",
-    costo: "",
-    descripcion: "",
-  });
-  const [nuevoGasto, setNuevoGasto] = useState<Gasto>({
-    fecha: "22/08/2025",
-    titulo: "",
-    costo: "",
-    descripcion: "",
-  });
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [gastoSeleccionado, setGastoSeleccionado] = useState<Expense | null>(null);
+  const [gastoEdit, setGastoEdit] = useState<Expense>({ id: 0, expense_date: "", expense_time: "", description: "", amount: 0 });
+  const [nuevoGasto, setNuevoGasto] = useState({ description: "", amount: "" });
+  const [gastos, setGastos] = useState<Expense[]>([]);
+  const [gastoToDelete, setGastoToDelete] = useState<Expense | null>(null);
 
-  const [gastos, setGastos] = useState<Gasto[]>([
-    {
-      titulo: "Traqueas",
-      fecha: "22/08/2025",
-      costo: "500$",
-      descripcion: "Costal de 10 kilos de traqueas",
-    },
-    {
-      titulo: "Orejas",
-      fecha: "30/08/2025",
-      costo: "300$",
-      descripcion: "Bolsa de orejas de cerdo",
-    },
-  ]);
+  // Cargar gastos desde la base de datos
+  const loadExpenses = async () => {
+    try {
+      const db = await openDB();
+      const expensesList = await getAllExpenses(db);
+      setGastos(expensesList);
+    } catch (error) {
+      Alert.alert('Error', 'No se pudieron cargar los gastos');
+      console.error('Error loading expenses:', error);
+    }
+  };
 
-  const handleVerGasto = (gasto: Gasto) => {
+  useEffect(() => {
+    loadExpenses();
+  }, []);
+
+  const handleVerGasto = (gasto: Expense) => {
     setGastoSeleccionado(gasto);
     setModalVisible(true);
   };
 
+  const handleEdit = (gasto: Expense) => {
+    setGastoEdit(gasto);
+    setEditModalVisible(true);
+  };
+
+  const handleGuardarEdit = async () => {
+    try {
+      if (!gastoEdit.description.trim() || gastoEdit.amount <= 0) {
+        Alert.alert('Error', 'Por favor complete todos los campos correctamente');
+        return;
+      }
+      
+      const db = await openDB();
+      await updateExpense(db, gastoEdit.id, gastoEdit.description, gastoEdit.amount);
+      setEditModalVisible(false);
+      await loadExpenses();
+      Alert.alert('Éxito', 'Gasto actualizado correctamente');
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo actualizar el gasto');
+      console.error('Error updating expense:', error);
+    }
+  };
+
   const handleNuevoGasto = () => {
-    setNuevoGasto({
-      fecha: "22/08/2025",
-      titulo: "",
-      costo: "",
-      descripcion: "",
-    });
+    setNuevoGasto({ description: "", amount: "" });
     setNuevoModalVisible(true);
   };
 
-  const handleGuardarNuevoGasto = () => {
-    setGastos([...gastos, nuevoGasto]);
-    setNuevoModalVisible(false);
+  const handleGuardarNuevoGasto = async () => {
+    try {
+      const amount = parseFloat(nuevoGasto.amount);
+      
+      if (!nuevoGasto.description.trim() || isNaN(amount) || amount <= 0) {
+        Alert.alert('Error', 'Por favor complete todos los campos correctamente');
+        return;
+      }
+      
+      const db = await openDB();
+      await addExpense(db, nuevoGasto.description, amount);
+      setNuevoModalVisible(false);
+      setNuevoGasto({ description: "", amount: "" });
+      await loadExpenses();
+      Alert.alert('Éxito', 'Gasto agregado correctamente');
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo agregar el gasto');
+      console.error('Error adding expense:', error);
+    }
+  };
+
+  const handleDelete = (gasto: Expense) => {
+    setGastoToDelete(gasto);
+    setDeleteModalVisible(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!gastoToDelete) return;
+    
+    try {
+      const db = await openDB();
+      await deleteExpense(db, gastoToDelete.id);
+      setDeleteModalVisible(false);
+      setGastoToDelete(null);
+      await loadExpenses();
+      Alert.alert('Éxito', 'Gasto eliminado correctamente');
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo eliminar el gasto');
+      console.error('Error deleting expense:', error);
+    }
   };
 
   return (
     <ProtectedLayout title="Gastos" requiredPermission="GESTIONAR_GASTOS">
       <View style={styles.productsTable}>
         <View style={styles.tableHeader}>
-          <Text style={[styles.tableCell, { flex: 1.2, fontWeight: "bold", fontSize: 22 }]}>Fecha</Text>
-          <Text style={[styles.tableCell, { flex: 1, fontWeight: "bold", fontSize: 22 }]}>Cantidad</Text>
-          <Text style={[styles.tableCell, { flex: 1.5, fontWeight: "bold", fontSize: 22 }]}>Titulo</Text>
-          <TouchableOpacity style={styles.addBtn} onPress={handleNuevoGasto}>
-            <Text style={styles.addBtnText}>＋</Text>
+          <Text style={[styles.tableCell, { flex: isMobile ? 1 : 1.2, fontWeight: "bold", fontSize: isMobile ? 14 : 22 }]}>Fecha</Text>
+          <Text style={[styles.tableCell, { flex: 1, fontWeight: "bold", fontSize: isMobile ? 14 : 22 }]}>Cantidad</Text>
+          {!isMobile && <Text style={[styles.tableCell, { flex: 1.5, fontWeight: "bold", fontSize: 22 }]}>Descripción</Text>}
+          <TouchableOpacity style={[styles.addBtn, isMobile && { width: 28, height: 28 }]} onPress={handleNuevoGasto}>
+            <Text style={[styles.addBtnText, isMobile && { fontSize: 20 }]}>＋</Text>
           </TouchableOpacity>
         </View>
         <ScrollView>
           {gastos.map((gasto, idx) => (
-            <TouchableOpacity key={idx} onPress={() => handleVerGasto(gasto)}>
-              <View style={styles.tableRow}>
-                <Text style={[styles.tableCell, { flex: 1.2 }]}>{gasto.fecha}</Text>
-                <Text style={[styles.tableCell, { flex: 1 }]}>{gasto.costo}</Text>
-                <Text style={[styles.tableCell, { flex: 1.5 }]}>{gasto.titulo}</Text>
+            <View style={[styles.tableRow, isMobile && { paddingVertical: 8 }]} key={idx}>
+              <TouchableOpacity 
+                style={styles.rowContent}
+                onPress={() => handleVerGasto(gasto)}
+              >
+                <Text style={[styles.tableCell, { flex: isMobile ? 1 : 1.2, fontSize: isMobile ? 14 : 18 }]} numberOfLines={1}>
+                  {gasto.expense_date}
+                </Text>
+                <Text style={[styles.tableCell, { flex: 1, fontSize: isMobile ? 14 : 18 }]}>
+                  ${gasto.amount.toFixed(2)}
+                </Text>
+                {!isMobile && (
+                  <Text style={[styles.tableCell, { flex: 1.5, fontSize: 18 }]} numberOfLines={1}>
+                    {gasto.description}
+                  </Text>
+                )}
+              </TouchableOpacity>
+              <View style={styles.actionButtons}>
+                <TouchableOpacity style={[styles.editBtn, isMobile && { paddingHorizontal: 6, paddingVertical: 3 }]} onPress={() => handleEdit(gasto)}>
+                  <Text style={[styles.editBtnText, isMobile && { fontSize: 12 }]}>✏️</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.deleteBtn, isMobile && { paddingHorizontal: 6, paddingVertical: 3 }]} onPress={() => handleDelete(gasto)}>
+                  <Text style={[styles.deleteBtnText, isMobile && { fontSize: 12 }]}>🗑️</Text>
+                </TouchableOpacity>
               </View>
-            </TouchableOpacity>
+            </View>
           ))}
         </ScrollView>
       </View>
@@ -89,19 +158,55 @@ export default function GastosScreen() {
         <View style={styles.modalContainer}>
           <View style={styles.gastoBox}>
             <View style={styles.gastoHeader}>
-              <Text style={styles.gastoHeaderTitle}>{gastoSeleccionado.titulo}</Text>
+              <Text style={styles.gastoHeaderTitle}>Detalle del gasto</Text>
             </View>
             <View style={styles.gastoContent}>
-              <Text style={styles.gastoLabel}>Fecha: {gastoSeleccionado.fecha}</Text>
-              <Text style={styles.gastoLabel}>Costo: {gastoSeleccionado.costo}</Text>
+              <Text style={styles.gastoLabel}>Fecha: {gastoSeleccionado?.expense_date}</Text>
+              <Text style={styles.gastoLabel}>Hora: {gastoSeleccionado?.expense_time}</Text>
+              <Text style={styles.gastoLabel}>Monto: ${gastoSeleccionado?.amount.toFixed(2)}</Text>
               <Text style={styles.gastoLabel}>Descripción:</Text>
               <View style={styles.gastoDescripcionBox}>
-                <Text style={styles.gastoDescripcionText}>{gastoSeleccionado.descripcion}</Text>
+                <Text style={styles.gastoDescripcionText}>{gastoSeleccionado?.description}</Text>
               </View>
             </View>
             <TouchableOpacity style={styles.cerrarBtn} onPress={() => setModalVisible(false)}>
               <Text style={styles.cerrarBtnText}>Cerrar</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal Editar Gasto */}
+      <Modal visible={editModalVisible} transparent animationType="slide">
+        <View style={styles.modalContainer}>
+          <View style={styles.nuevoBox}>
+            <View style={styles.gastoHeader}>
+              <Text style={styles.gastoHeaderTitle}>Editar gasto</Text>
+            </View>
+            <View style={styles.nuevoContent}>
+              <Text style={styles.nuevoLabel}>Descripción:</Text>
+              <TextInput
+                style={styles.nuevoDescripcionInput}
+                value={gastoEdit.description}
+                onChangeText={text => setGastoEdit({ ...gastoEdit, description: text })}
+                multiline
+              />
+              <Text style={styles.nuevoLabel}>Monto:</Text>
+              <TextInput
+                style={styles.nuevoInput}
+                value={gastoEdit.amount.toString()}
+                onChangeText={text => setGastoEdit({ ...gastoEdit, amount: parseFloat(text) || 0 })}
+                keyboardType="numeric"
+              />
+            </View>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={[styles.guardarBtn, { backgroundColor: '#dc3545', borderBottomRightRadius: 0 }]} onPress={() => setEditModalVisible(false)}>
+                <Text style={styles.guardarBtnText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.guardarBtn, { borderBottomLeftRadius: 0 }]} onPress={handleGuardarEdit}>
+                <Text style={styles.guardarBtnText}>Guardar</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -114,31 +219,55 @@ export default function GastosScreen() {
               <Text style={styles.gastoHeaderTitle}>Nuevo gasto</Text>
             </View>
             <View style={styles.nuevoContent}>
-              <Text style={styles.nuevoLabel}>Fecha: {nuevoGasto.fecha}</Text>
-              <Text style={styles.nuevoLabel}>Titulo:</Text>
-              <TextInput
-                style={styles.nuevoInput}
-                value={nuevoGasto.titulo}
-                onChangeText={text => setNuevoGasto({ ...nuevoGasto, titulo: text })}
-              />
-              <Text style={styles.nuevoLabel}>Costo:</Text>
-              <TextInput
-                style={styles.nuevoInput}
-                value={nuevoGasto.costo}
-                onChangeText={text => setNuevoGasto({ ...nuevoGasto, costo: text })}
-                keyboardType="numeric"
-              />
               <Text style={styles.nuevoLabel}>Descripción:</Text>
               <TextInput
                 style={styles.nuevoDescripcionInput}
-                value={nuevoGasto.descripcion}
-                onChangeText={text => setNuevoGasto({ ...nuevoGasto, descripcion: text })}
+                value={nuevoGasto.description}
+                onChangeText={text => setNuevoGasto({ ...nuevoGasto, description: text })}
                 multiline
+                placeholder="Describe el gasto..."
+              />
+              <Text style={styles.nuevoLabel}>Monto:</Text>
+              <TextInput
+                style={styles.nuevoInput}
+                value={nuevoGasto.amount}
+                onChangeText={text => setNuevoGasto({ ...nuevoGasto, amount: text })}
+                keyboardType="numeric"
+                placeholder="0.00"
               />
             </View>
-            <TouchableOpacity style={styles.guardarBtn} onPress={handleGuardarNuevoGasto}>
-              <Text style={styles.guardarBtnText}>Guardar</Text>
-            </TouchableOpacity>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={[styles.guardarBtn, { backgroundColor: '#dc3545', borderBottomRightRadius: 0 }]} onPress={() => setNuevoModalVisible(false)}>
+                <Text style={styles.guardarBtnText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.guardarBtn, { borderBottomLeftRadius: 0 }]} onPress={handleGuardarNuevoGasto}>
+                <Text style={styles.guardarBtnText}>Guardar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal Confirmar Eliminar */}
+      <Modal visible={deleteModalVisible} transparent animationType="slide">
+        <View style={styles.modalContainer}>
+          <View style={styles.gastoBox}>
+            <View style={styles.gastoHeader}>
+              <Text style={styles.gastoHeaderTitle}>Confirmar eliminación</Text>
+            </View>
+            <View style={styles.gastoContent}>
+              <Text style={styles.confirmText}>
+                ¿Está seguro de que desea eliminar el gasto "{gastoToDelete?.description}" por ${gastoToDelete?.amount.toFixed(2)}?
+              </Text>
+            </View>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={[styles.cerrarBtn, { backgroundColor: '#6c757d', flex: 1, borderBottomRightRadius: 0 }]} onPress={() => setDeleteModalVisible(false)}>
+                <Text style={styles.cerrarBtnText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.cerrarBtn, { backgroundColor: '#dc3545', flex: 1, borderBottomLeftRadius: 0 }]} onPress={confirmDelete}>
+                <Text style={styles.cerrarBtnText}>Eliminar</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -160,7 +289,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: "#ccc",
     paddingVertical: 8,
-    paddingHorizontal: 10,
+    paddingHorizontal: 6,
     backgroundColor: "#fff",
   },
   tableRow: {
@@ -169,10 +298,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: "#f0f0f0",
     paddingVertical: 10,
-    paddingHorizontal: 10,
+    paddingHorizontal: 6,
   },
   tableCell: {
     fontSize: 18,
+    paddingHorizontal: 4,
   },
   addBtn: {
     width: 32,
@@ -291,7 +421,7 @@ const styles = StyleSheet.create({
   },
   guardarBtn: {
     backgroundColor: "#38b24d",
-    width: "100%",
+    flex: 1,
     paddingVertical: 18,
     alignItems: "center",
     borderBottomLeftRadius: 12,
@@ -301,5 +431,46 @@ const styles = StyleSheet.create({
     color: "#000",
     fontSize: 28,
     fontWeight: "bold",
+  },
+  // Nuevos estilos para botones de acción
+  rowContent: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  actionButtons: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  editBtn: {
+    backgroundColor: "#007bff",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  editBtnText: {
+    color: "#fff",
+    fontSize: 14,
+  },
+  deleteBtn: {
+    backgroundColor: "#dc3545",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  deleteBtnText: {
+    color: "#fff",
+    fontSize: 14,
+  },
+  modalButtons: {
+    flexDirection: "row",
+    width: "100%",
+    gap: 0,
+  },
+  confirmText: {
+    fontSize: 18,
+    textAlign: "center",
+    marginBottom: 20,
   },
 });

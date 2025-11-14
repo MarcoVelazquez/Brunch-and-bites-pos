@@ -1,0 +1,261 @@
+import React, { useState, useEffect } from "react";
+import { View, Text, TouchableOpacity, TextInput, StyleSheet, ScrollView, Alert, Modal, Dimensions } from "react-native";
+import ProtectedLayout from './components/ProtectedLayout';
+import { useAuth } from './contexts/AuthContext';
+import { getAllProducts } from './lib/database.refactor';
+import type { Product } from './lib/database.types';
+
+interface CartItem {
+    id: number;
+    name: string;
+    quantity: number;
+    price: number;
+}
+
+export default function CajaScreen() {
+    const { db } = useAuth();
+    const [cantidad, setCantidad] = useState('');
+    const [cambio, setCambio] = useState(0);
+    const [total, setTotal] = useState(0);
+    const [items, setItems] = useState<CartItem[]>([]);
+    const [products, setProducts] = useState<Product[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [showPaymentModal, setShowPaymentModal] = useState(false);
+    const [receivedAmount, setReceivedAmount] = useState('');
+    
+    // Estado para manejar dimensiones de pantalla dinámicamente - RESPONSIVIDAD
+    const [screenData, setScreenData] = useState(Dimensions.get('window'));
+    const { width, height } = screenData;
+    const isTablet = width >= 768;
+    const isLandscape = width > height;
+    const isSmallScreen = width < 400;
+
+    const handlePago = () => {
+        const pago = parseFloat(cantidad);
+        if (!isNaN(pago) && pago >= total) {
+            setCambio(pago - total);
+        }
+    };
+
+    return (
+        <ProtectedLayout title="Caja" requiredPermission="COBRAR">
+            <View style={styles.content}>
+                <View style={styles.products}>
+                    <View style={styles.tableHeader}>
+                        <Text style={[styles.tableCell, { flex: 2, fontWeight: "bold" }]}>
+                            Nombre
+                        </Text>
+                        <Text style={[styles.tableCell, { flex: 1, fontWeight: "bold" }]}>
+                            Precio
+                        </Text>
+                    </View>
+                    <ScrollView style={styles.productsScroll}>
+                        <View style={styles.tableRow}>
+                            <Text style={[styles.tableCell, { flex: 2 }]}>Traquea</Text>
+                            <Text style={[styles.tableCell, { flex: 1 }]}>50$</Text>
+                        </View>
+                        <View style={styles.tableRow}>
+                            <Text style={[styles.tableCell, { flex: 2 }]}>Pata de conejo</Text>
+                            <Text style={[styles.tableCell, { flex: 1 }]}>30$</Text>
+                        </View>
+                    </ScrollView>
+                </View>
+
+                <View style={styles.cart}>
+                    <ScrollView style={styles.cartItems}>
+                        {items.map((item) => (
+                            <View key={item.id} style={styles.cartRow}>
+                                <Text style={styles.itemName}>{item.name}</Text>
+                                <View style={styles.itemControls}>
+                                    <TouchableOpacity style={styles.cartBtn}>
+                                        <Text style={styles.cartBtnText}>−</Text>
+                                    </TouchableOpacity>
+                                    <Text style={styles.itemQuantity}>{item.quantity}</Text>
+                                    <TouchableOpacity style={styles.cartBtn}>
+                                        <Text style={styles.cartBtnText}>+</Text>
+                                    </TouchableOpacity>
+                                </View>
+                                <Text style={styles.itemTotal}>
+                                    ${(item.price * item.quantity).toFixed(2)}
+                                </Text>
+                            </View>
+                        ))}
+                    </ScrollView>
+
+                    <View style={styles.paymentSection}>
+                        <View style={styles.totalRow}>
+                            <Text style={styles.totalLabel}>Total:</Text>
+                            <Text style={styles.totalAmount}>${total.toFixed(2)}</Text>
+                        </View>
+
+                        <View style={styles.totalRow}>
+                            <Text style={styles.totalLabel}>Recibido:</Text>
+                            <TextInput
+                                style={styles.amountInput}
+                                value={cantidad}
+                                onChangeText={setCantidad}
+                                keyboardType="numeric"
+                                placeholder="0.00"
+                            />
+                        </View>
+
+                        <View style={styles.totalRow}>
+                            <Text style={styles.totalLabel}>Cambio:</Text>
+                            <Text style={styles.totalAmount}>${cambio.toFixed(2)}</Text>
+                        </View>
+
+                        <TouchableOpacity
+                            style={styles.payButton}
+                            onPress={handlePago}
+                        >
+                            <Text style={styles.payButtonText}>Pagar</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </View>
+        </ProtectedLayout>
+    );
+}
+
+const styles = StyleSheet.create({
+    content: {
+        flex: 1,
+        flexDirection: "row",
+        padding: 20,
+        gap: 20,
+    },
+    products: {
+        flex: 2,
+        backgroundColor: '#fff',
+        borderRadius: 10,
+        padding: 15,
+        shadowColor: '#000',
+        shadowOffset: {
+            width: 0,
+            height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 3,
+        elevation: 3,
+    },
+    productsScroll: {
+        flex: 1,
+    },
+    tableHeader: {
+        flexDirection: "row",
+        borderBottomWidth: 1,
+        borderColor: "#ddd",
+        paddingBottom: 10,
+        marginBottom: 10,
+    },
+    tableRow: {
+        flexDirection: "row",
+        paddingVertical: 10,
+        borderBottomWidth: 1,
+        borderColor: "#f0f0f0",
+    },
+    tableCell: {
+        fontSize: 16,
+    },
+    cart: {
+        width: 380,
+        backgroundColor: '#fff',
+        borderRadius: 10,
+        padding: 15,
+        shadowColor: '#000',
+        shadowOffset: {
+            width: 0,
+            height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 3,
+        elevation: 3,
+    },
+    cartItems: {
+        flex: 1,
+        marginBottom: 15,
+    },
+    cartRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 10,
+        borderBottomWidth: 1,
+        borderColor: '#f0f0f0',
+    },
+    itemName: {
+        flex: 2,
+        fontSize: 16,
+    },
+    itemControls: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+    },
+    cartBtn: {
+        width: 30,
+        height: 30,
+        backgroundColor: '#38b24d',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderRadius: 15,
+    },
+    cartBtnText: {
+        color: '#fff',
+        fontSize: 20,
+        fontWeight: 'bold',
+        lineHeight: 20,
+    },
+    itemQuantity: {
+        fontSize: 16,
+        minWidth: 30,
+        textAlign: 'center',
+    },
+    itemTotal: {
+        fontSize: 16,
+        minWidth: 80,
+        textAlign: 'right',
+    },
+    paymentSection: {
+        borderTopWidth: 1,
+        borderColor: '#ddd',
+        paddingTop: 15,
+    },
+    totalRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 15,
+    },
+    totalLabel: {
+        fontSize: 18,
+        fontWeight: 'bold',
+    },
+    totalAmount: {
+        fontSize: 18,
+        minWidth: 100,
+        textAlign: 'right',
+    },
+    amountInput: {
+        width: 100,
+        height: 40,
+        borderWidth: 1,
+        borderColor: '#ddd',
+        borderRadius: 5,
+        paddingHorizontal: 10,
+        fontSize: 18,
+        textAlign: 'right',
+    },
+    payButton: {
+        backgroundColor: '#38b24d',
+        padding: 15,
+        borderRadius: 8,
+        alignItems: 'center',
+        marginTop: 10,
+    },
+    payButtonText: {
+        color: 'white',
+        fontSize: 18,
+        fontWeight: 'bold',
+    },
+});

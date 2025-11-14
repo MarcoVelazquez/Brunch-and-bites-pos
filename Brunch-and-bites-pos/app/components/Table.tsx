@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
 
 interface TableHeaderProps {
     columns: Array<{
@@ -9,6 +9,9 @@ interface TableHeaderProps {
 }
 
 export function TableHeader({ columns }: TableHeaderProps) {
+    const { width } = useWindowDimensions();
+    const isMobile = width < 768;
+    
     return (
         <View style={styles.tableHeader}>
             {columns.map((col, index) => (
@@ -16,8 +19,10 @@ export function TableHeader({ columns }: TableHeaderProps) {
                     key={index} 
                     style={[
                         styles.headerCell,
-                        { flex: col.flex || 1 }
+                        { flex: col.flex || 1 },
+                        isMobile && styles.headerCellMobile
                     ]}
+                    numberOfLines={2}
                 >
                     {col.label}
                 </Text>
@@ -34,6 +39,9 @@ interface TableRowProps {
 }
 
 export function TableRow({ cells }: TableRowProps) {
+    const { width } = useWindowDimensions();
+    const isMobile = width < 768;
+    
     return (
         <View style={styles.tableRow}>
             {cells.map((cell, index) => (
@@ -45,7 +53,12 @@ export function TableRow({ cells }: TableRowProps) {
                     ]}
                 >
                     {typeof cell.content === 'string' || typeof cell.content === 'number' ? (
-                        <Text style={styles.cellText}>{cell.content}</Text>
+                        <Text 
+                            style={[styles.cellText, isMobile && styles.cellTextMobile]}
+                            numberOfLines={2}
+                        >
+                            {cell.content}
+                        </Text>
                     ) : (
                         cell.content
                     )}
@@ -92,6 +105,10 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         paddingHorizontal: 10,
     },
+    headerCellMobile: {
+        fontSize: 12,
+        paddingHorizontal: 4,
+    },
     tableRow: {
         flexDirection: 'row',
         borderBottomWidth: 1,
@@ -100,8 +117,12 @@ const styles = StyleSheet.create({
     },
     cell: {
         paddingHorizontal: 10,
+        justifyContent: 'center',
     },
     cellText: {
         fontSize: 16,
+    },
+    cellTextMobile: {
+        fontSize: 12,
     },
 });

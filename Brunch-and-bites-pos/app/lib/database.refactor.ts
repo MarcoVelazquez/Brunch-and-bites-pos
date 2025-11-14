@@ -1,25 +1,98 @@
-import { openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite';
+// @ts-ignore
+const { openDatabaseSync } = require('expo-sqlite');
+
+// Type alias for SQLiteDatabase
+type SQLiteDatabase = any;
 import type {
     User, Permission, Product, Sale, SaleItem,
     Expense, Costing, CostingItem, CountResult
 } from './database.types';
 
 const dbName = 'pos_system.db';
+let currentDb: SQLiteDatabase | null = null;
+let openingPromise: Promise<SQLiteDatabase> | null = null;
+
+// Internal: detect native SQLite NPE/prepare/rejected errors
+const isNativeDbError = (err: unknown): boolean => {
+    const msg = err instanceof Error ? err.message : String(err);
+    return (
+        msg.includes('NullPointerException') ||
+        msg.includes('prepareAsync') ||
+        msg.includes('execAsync') ||
+        msg.includes('rejected')
+    );
+};
+
+// Internal: delete and recreate the database, then return a fresh handle
+const recoverDatabase = async (): Promise<SQLiteDatabase> => {
+    try {
+        // Close existing handle if present
+        if (currentDb && typeof currentDb.closeAsync === 'function') {
+            try { await currentDb.closeAsync(); } catch {}
+        }
+        currentDb = null;
+        const sqlite = await import('expo-sqlite');
+        if ((sqlite as any).deleteDatabaseAsync) {
+            try {
+                await (sqlite as any).deleteDatabaseAsync(dbName);
+                console.warn(`🧹 Deleted corrupted database '${dbName}'`);
+            } catch (delErr) {
+                console.warn('⚠️ First delete attempt failed, retrying after short delay...', delErr);
+                await new Promise(r => setTimeout(r, 150));
+                await (sqlite as any).deleteDatabaseAsync(dbName);
+                console.warn(`🧹 Deleted corrupted database on retry '${dbName}'`);
+            }
+        }
+    } catch (e) {
+        console.warn('⚠️ Failed to delete database (may not exist):', e);
+    }
+    const db = openDatabaseSync(dbName);
+    await db.execAsync('PRAGMA foreign_keys = ON;');
+    await db.execAsync('PRAGMA journal_mode = WAL;');
+    await db.execAsync('PRAGMA busy_timeout = 5000;');
+    await createTables(db);
+    await insertInitialPermissions(db);
+    currentDb = db;
+    return db;
+};
 
 // Basic database operations
 export const openDB = async (): Promise<SQLiteDatabase> => {
-    try {
-        const db = await openDatabaseAsync(dbName);
-        console.log('¡Base de datos abierta exitosamente!');
-        return db;
-    } catch (error) {
-        console.error('Error al abrir la base de datos:', error);
-        throw error;
+    if (currentDb) return currentDb;
+    if (openingPromise) return openingPromise;
+    openingPromise = (async () => {
+        try {
+            const db = openDatabaseSync(dbName);
+            await db.execAsync('PRAGMA foreign_keys = ON;');
+            await db.execAsync('PRAGMA journal_mode = WAL;');
+            await db.execAsync('PRAGMA busy_timeout = 5000;');
+            // Connection sanity check
+            await db.getFirstAsync('SELECT 1 as ok');
+            currentDb = db;
+            return db;
+        } catch (error) {
+            console.error('❌ openDB failed, attempting recovery:', error);
+            if (isNativeDbError(error)) {
+                const healthy = await recoverDatabase();
+                return healthy;
+            }
+            throw error;
+        } finally {
+            openingPromise = null;
+        }
+    })();
+    return openingPromise;
+};
+
+export const closeDB = async (): Promise<void> => {
+    if (currentDb && typeof currentDb.closeAsync === 'function') {
+        try { await currentDb.closeAsync(); } catch {}
     }
+    currentDb = null;
 };
 
 export const createTables = async (db: SQLiteDatabase): Promise<void> => {
-    try {
+    await db.withTransactionAsync(async () => {
         await db.execAsync(`
             CREATE TABLE IF NOT EXISTS permissions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,11 +160,7 @@ export const createTables = async (db: SQLiteDatabase): Promise<void> => {
                 FOREIGN KEY (costing_id) REFERENCES costings(id) ON DELETE CASCADE
             );
         `);
-        console.log('¡Todas las tablas creadas exitosamente!');
-    } catch (error) {
-        console.error('Error en la transacción al crear tablas:', error);
-        throw error;
-    }
+    });
 };
 
 /**
@@ -105,22 +174,11 @@ export const insertInitialPermissions = async (db: SQLiteDatabase): Promise<void
         'EDITAR_PRODUCTOS', 'VER_COSTEOS', 'REALIZAR_COSTEOS', 'ELIMINAR_COSTEOS', 'REGISTRAR_GASTOS',
         'VER_GASTOS', 'ELIMINAR_GASTOS', 'VER_REPORTES'
     ];
-
-    try {
-        const stmt = await db.prepareAsync('SELECT COUNT(*) as count FROM permissions');
-        const result = await stmt.executeAsync();
-        await stmt.finalizeAsync();
-
-        const rows = result as unknown as { _array: CountResult[] };
-        const count = rows._array[0].count;
-
-        if (count === 0) {
-            const insertSql = permissions.map(name => `('${name}')`).join(', ');
-            await db.execAsync(`INSERT INTO permissions (name) VALUES ${insertSql}`);
-        }
-    } catch (error) {
-        console.error('Error al insertar permisos iniciales:', error);
-        throw error;
+    const row = await db.getFirstAsync('SELECT COUNT(*) as count FROM permissions');
+    const count = row?.count ?? 0;
+    if (count === 0) {
+        const insertSql = permissions.map(() => '(?)').join(', ');
+        await db.runAsync(`INSERT INTO permissions (name) VALUES ${insertSql}`, permissions);
     }
 };
 
@@ -130,178 +188,98 @@ export const insertInitialPermissions = async (db: SQLiteDatabase): Promise<void
  * Adds a new user to the system.
  */
 export const addUser = async (db: SQLiteDatabase, username: string, passwordHash: string, isAdmin: boolean = false): Promise<number> => {
-    try {
-        const stmt = await db.prepareAsync(
-            'INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, ?)'
-        );
-        const result = await stmt.executeAsync([username, passwordHash, isAdmin ? 1 : 0]);
-        await stmt.finalizeAsync();
-        
-        // Get the inserted ID using last_insert_rowid()
-        const idStmt = await db.prepareAsync('SELECT last_insert_rowid() as id');
-        const idResult = await idStmt.executeAsync();
-        await idStmt.finalizeAsync();
-        
-        const rows = idResult as unknown as { _array: { id: number }[] };
-        return rows._array[0].id;
-    } catch (error) {
-        console.error('Error adding user:', error);
-        throw error;
+    const existing = await db.getFirstAsync('SELECT id FROM users WHERE username = ?', [username]);
+    if (existing) {
+        throw new Error('El nombre de usuario ya está en uso');
     }
+    const res = await db.runAsync('INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, ?)', [username, passwordHash, isAdmin ? 1 : 0]);
+    return Number(res.lastInsertRowId);
 };
 
 /**
  * Gets a user by their username. Useful for authentication.
  */
 export const getUserByUsername = async (db: SQLiteDatabase, username: string): Promise<User | null> => {
-    try {
-        const stmt = await db.prepareAsync('SELECT * FROM users WHERE username = ?');
-        const result = await stmt.executeAsync([username]);
-        await stmt.finalizeAsync();
-        
-        const rows = result as unknown as { _array: User[] };
-        if (rows._array.length > 0) {
-            const user = rows._array[0];
-            return { ...user, is_admin: Boolean(user.is_admin) };
-        }
-        return null;
-    } catch (error) {
-        console.error('Error getting user by username:', error);
-        throw error;
-    }
+    const row = await db.getFirstAsync('SELECT * FROM users WHERE username = ?', [username]);
+    if (!row) return null;
+    return { ...row, is_admin: Boolean((row as any).is_admin) } as User;
 };
 
 /**
  * Gets a user by their ID.
  */
 export const getUserById = async (db: SQLiteDatabase, userId: number): Promise<User | null> => {
-    try {
-        const stmt = await db.prepareAsync('SELECT * FROM users WHERE id = ?');
-        const result = await stmt.executeAsync([userId]);
-        await stmt.finalizeAsync();
-        
-        const rows = result as unknown as { _array: User[] };
-        if (rows._array.length > 0) {
-            const user = rows._array[0];
-            return { ...user, is_admin: Boolean(user.is_admin) };
-        }
-        return null;
-    } catch (error) {
-        console.error('Error getting user by ID:', error);
-        throw error;
-    }
+    const row = await db.getFirstAsync('SELECT * FROM users WHERE id = ?', [userId]);
+    if (!row) return null;
+    return { ...row, is_admin: Boolean((row as any).is_admin) } as User;
 };
 
 /**
  * Gets all users in the system.
  */
 export const getAllUsers = async (db: SQLiteDatabase): Promise<User[]> => {
-    try {
-        const stmt = await db.prepareAsync('SELECT * FROM users');
-        const result = await stmt.executeAsync();
-        await stmt.finalizeAsync();
-        
-        const rows = result as unknown as { _array: User[] };
-        return rows._array.map(user => ({ ...user, is_admin: Boolean(user.is_admin) }));
-    } catch (error) {
-        console.error('Error getting all users:', error);
-        throw error;
-    }
+    const rows = await db.getAllAsync('SELECT * FROM users');
+    return rows.map((user: any) => ({ ...user, is_admin: Boolean(user.is_admin) } as User));
 };
 
 /**
  * Updates user information.
  */
-export const updateUser = async (
-    db: SQLiteDatabase, 
-    userId: number, 
-    username: string, 
-    passwordHash: string, 
-    isAdmin: boolean
-): Promise<number> => {
-    try {
-        const stmt = await db.prepareAsync(
-            'UPDATE users SET username = ?, password_hash = ?, is_admin = ? WHERE id = ?'
-        );
-        const result = await stmt.executeAsync([username, passwordHash, isAdmin ? 1 : 0, userId]);
-        await stmt.finalizeAsync();
-        
-        const rows = result as unknown as { rowsAffected: number };
-        return rows.rowsAffected;
-    } catch (error) {
-        console.error('Error updating user:', error);
-        throw error;
-    }
+export const updateUser = async (db: SQLiteDatabase, userId: number, username: string, passwordHash: string, isAdmin: boolean): Promise<number> => {
+    const res = await db.runAsync('UPDATE users SET username = ?, password_hash = ?, is_admin = ? WHERE id = ?', [username, passwordHash, isAdmin ? 1 : 0, userId]);
+    return Number(res.changes);
 };
 
 /**
  * Deletes a user by their ID.
  */
 export const deleteUser = async (db: SQLiteDatabase, userId: number): Promise<number> => {
-    try {
-        const stmt = await db.prepareAsync('DELETE FROM users WHERE id = ?');
-        const result = await stmt.executeAsync([userId]);
-        await stmt.finalizeAsync();
-        
-        const rows = result as unknown as { rowsAffected: number };
-        return rows.rowsAffected;
-    } catch (error) {
-        console.error('Error deleting user:', error);
-        throw error;
-    }
+    const res = await db.runAsync('DELETE FROM users WHERE id = ?', [userId]);
+    return Number(res.changes);
 };
 
 /**
  * Gets all permissions for a specific user.
  */
 export const getUserPermissions = async (db: SQLiteDatabase, userId: number): Promise<string[]> => {
-    try {
-        const stmt = await db.prepareAsync(
-            `SELECT p.name FROM user_permissions up
-             JOIN permissions p ON up.permission_id = p.id
-             WHERE up.user_id = ?`
-        );
-        const result = await stmt.executeAsync([userId]);
-        await stmt.finalizeAsync();
-        
-        const rows = result as unknown as { _array: { name: string }[] };
-        return rows._array.map(row => row.name);
-    } catch (error) {
-        console.error('Error getting user permissions:', error);
-        throw error;
-    }
+    const rows = await db.getAllAsync(
+        `SELECT p.name FROM user_permissions up JOIN permissions p ON up.permission_id = p.id WHERE up.user_id = ?`,
+        [userId]
+    );
+    return rows.map((r: { name: string }) => r.name);
 };
 
 /**
  * Creates a new admin user with all permissions.
  */
-export const seedAdminUser = async (db: SQLiteDatabase, username: string, password: string): Promise<User | null> => {
+export const seedAdminUser = async (db: SQLiteDatabase, username: string, passwordHash: string): Promise<User | null> => {
+    // Verificar si ya existe un administrador
+    const existingAdmin = await db.getFirstAsync('SELECT id FROM users WHERE is_admin = 1');
+    const adminExists = Boolean(existingAdmin);
+    if (adminExists) {
+        return null;
+    }
+    // Crear el usuario
+    let userId: number;
     try {
-        // Start by creating the user
-        const userId = await addUser(db, username, password, true);
-        
-        // Get all available permissions
-        const stmt = await db.prepareAsync('SELECT id FROM permissions');
-        const result = await stmt.executeAsync();
-        await stmt.finalizeAsync();
-        
-        const rows = result as unknown as { _array: { id: number }[] };
-        
-        // Assign each permission to the user
-        for (const { id: permId } of rows._array) {
-            const permStmt = await db.prepareAsync(
-                'INSERT INTO user_permissions (user_id, permission_id) VALUES (?, ?)'
-            );
-            await permStmt.executeAsync([userId, permId]);
-            await permStmt.finalizeAsync();
-        }
-        
-        console.log(`Usuario administrador '${username}' creado con todos los permisos.`);
-        return await getUserById(db, userId);
+        userId = await addUser(db, username, passwordHash, true);
     } catch (error) {
-        console.error('Error creating admin user:', error);
+        if (error instanceof Error && error.message === 'El nombre de usuario ya está en uso') {
+            return null;
+        }
         throw error;
     }
+    // Obtener todos los permisos
+    const permRows = await db.getAllAsync('SELECT id FROM permissions');
+    const permIds: number[] = permRows.map((p: { id: number }) => p.id);
+    // Asignar cada permiso al usuario
+    await db.withTransactionAsync(async () => {
+        for (const permId of permIds) {
+            await db.runAsync('INSERT INTO user_permissions (user_id, permission_id) VALUES (?, ?)', [userId, permId]);
+        }
+    });
+    
+    return await getUserById(db, userId);
 };
 
 // Permission Management Functions
@@ -310,90 +288,32 @@ export const seedAdminUser = async (db: SQLiteDatabase, username: string, passwo
  * Gets all available permissions in the system.
  */
 export const getAllPermissions = async (db: SQLiteDatabase): Promise<Permission[]> => {
-    try {
-        const stmt = await db.prepareAsync('SELECT * FROM permissions');
-        const result = await stmt.executeAsync();
-        await stmt.finalizeAsync();
-        
-        const rows = result as unknown as { _array: Permission[] };
-        return rows._array;
-    } catch (error) {
-        console.error('Error getting all permissions:', error);
-        throw error;
-    }
+    const rows = await db.getAllAsync('SELECT * FROM permissions');
+    return rows as Permission[];
 };
 
 /**
  * Creates a new permission in the system.
  */
 export const addPermission = async (db: SQLiteDatabase, permissionName: string): Promise<number> => {
-    try {
-        const stmt = await db.prepareAsync('INSERT INTO permissions (name) VALUES (?)');
-        await stmt.executeAsync([permissionName]);
-        await stmt.finalizeAsync();
-        
-        // Get the inserted ID
-        const idStmt = await db.prepareAsync('SELECT last_insert_rowid() as id');
-        const idResult = await idStmt.executeAsync();
-        await idStmt.finalizeAsync();
-        
-        const rows = idResult as unknown as { _array: { id: number }[] };
-        return rows._array[0].id;
-    } catch (error) {
-        console.error('Error adding permission:', error);
-        throw error;
-    }
+    const res = await db.runAsync('INSERT INTO permissions (name) VALUES (?)', [permissionName]);
+    return Number(res.lastInsertRowId);
 };
 
 /**
  * Assigns a permission to a user.
  */
-export const assignPermissionToUser = async (
-    db: SQLiteDatabase,
-    userId: number,
-    permissionId: number
-): Promise<number> => {
-    try {
-        const stmt = await db.prepareAsync(
-            'INSERT OR IGNORE INTO user_permissions (user_id, permission_id) VALUES (?, ?)'
-        );
-        const result = await stmt.executeAsync([userId, permissionId]);
-        await stmt.finalizeAsync();
-        
-        // Get the inserted ID
-        const idStmt = await db.prepareAsync('SELECT last_insert_rowid() as id');
-        const idResult = await idStmt.executeAsync();
-        await idStmt.finalizeAsync();
-        
-        const rows = idResult as unknown as { _array: { id: number }[] };
-        return rows._array[0].id;
-    } catch (error) {
-        console.error('Error assigning permission to user:', error);
-        throw error;
-    }
+export const assignPermissionToUser = async (db: SQLiteDatabase, userId: number, permissionId: number): Promise<number> => {
+    const res = await db.runAsync('INSERT OR IGNORE INTO user_permissions (user_id, permission_id) VALUES (?, ?)', [userId, permissionId]);
+    return Number(res.lastInsertRowId);
 };
 
 /**
  * Revokes a permission from a user.
  */
-export const revokePermissionFromUser = async (
-    db: SQLiteDatabase,
-    userId: number,
-    permissionId: number
-): Promise<number> => {
-    try {
-        const stmt = await db.prepareAsync(
-            'DELETE FROM user_permissions WHERE user_id = ? AND permission_id = ?'
-        );
-        const result = await stmt.executeAsync([userId, permissionId]);
-        await stmt.finalizeAsync();
-        
-        const rows = result as unknown as { rowsAffected: number };
-        return rows.rowsAffected;
-    } catch (error) {
-        console.error('Error revoking permission from user:', error);
-        throw error;
-    }
+export const revokePermissionFromUser = async (db: SQLiteDatabase, userId: number, permissionId: number): Promise<number> => {
+    const res = await db.runAsync('DELETE FROM user_permissions WHERE user_id = ? AND permission_id = ?', [userId, permissionId]);
+    return Number(res.changes);
 };
 
 // Product Management Functions
@@ -402,24 +322,8 @@ export const revokePermissionFromUser = async (
  * Adds a new product to the system.
  */
 export const addProduct = async (db: SQLiteDatabase, name: string, price: number, cost: number): Promise<number> => {
-    try {
-        const stmt = await db.prepareAsync(
-            'INSERT INTO products (name, price, cost) VALUES (?, ?, ?)'
-        );
-        await stmt.executeAsync([name, price, cost]);
-        await stmt.finalizeAsync();
-        
-        // Get the inserted ID
-        const idStmt = await db.prepareAsync('SELECT last_insert_rowid() as id');
-        const idResult = await idStmt.executeAsync();
-        await idStmt.finalizeAsync();
-        
-        const rows = idResult as unknown as { _array: { id: number }[] };
-        return rows._array[0].id;
-    } catch (error) {
-        console.error('Error adding product:', error);
-        throw error;
-    }
+    const res = await db.runAsync('INSERT INTO products (name, price, cost) VALUES (?, ?, ?)', [name, price, cost]);
+    return Number(res.lastInsertRowId);
 };
 
 /**
@@ -427,14 +331,15 @@ export const addProduct = async (db: SQLiteDatabase, name: string, price: number
  */
 export const getAllProducts = async (db: SQLiteDatabase): Promise<Product[]> => {
     try {
-        const stmt = await db.prepareAsync('SELECT * FROM products ORDER BY name ASC');
-        const result = await stmt.executeAsync();
-        await stmt.finalizeAsync();
-        
-        const rows = result as unknown as { _array: Product[] };
-        return rows._array;
+        const rows = await db.getAllAsync('SELECT * FROM products ORDER BY name ASC');
+        return rows as Product[];
     } catch (error) {
-        console.error('Error getting all products:', error);
+        console.error('❌ getAllProducts failed:', error);
+        if (isNativeDbError(error)) {
+            const freshDb = await recoverDatabase();
+            const rows = await freshDb.getAllAsync('SELECT * FROM products ORDER BY name ASC');
+            return rows as Product[];
+        }
         throw error;
     }
 };
@@ -442,24 +347,16 @@ export const getAllProducts = async (db: SQLiteDatabase): Promise<Product[]> => 
 /**
  * Updates product information.
  */
-export const updateProduct = async (
-    db: SQLiteDatabase,
-    productId: number,
-    name: string,
-    price: number,
-    cost: number
-): Promise<number> => {
+export const updateProduct = async (db: SQLiteDatabase, productId: number, name: string, price: number, cost: number): Promise<number> => {
     try {
-        const stmt = await db.prepareAsync(
-            'UPDATE products SET name = ?, price = ?, cost = ? WHERE id = ?'
-        );
-        const result = await stmt.executeAsync([name, price, cost, productId]);
-        await stmt.finalizeAsync();
-        
-        const rows = result as unknown as { rowsAffected: number };
-        return rows.rowsAffected;
+        const res = await db.runAsync('UPDATE products SET name = ?, price = ?, cost = ? WHERE id = ?', [name, price, cost, productId]);
+        return Number(res.changes);
     } catch (error) {
-        console.error('Error updating product:', error);
+        if (isNativeDbError(error)) {
+            const freshDb = await recoverDatabase();
+            const res = await freshDb.runAsync('UPDATE products SET name = ?, price = ?, cost = ? WHERE id = ?', [name, price, cost, productId]);
+            return Number(res.changes);
+        }
         throw error;
     }
 };
@@ -469,14 +366,14 @@ export const updateProduct = async (
  */
 export const deleteProduct = async (db: SQLiteDatabase, productId: number): Promise<number> => {
     try {
-        const stmt = await db.prepareAsync('DELETE FROM products WHERE id = ?');
-        const result = await stmt.executeAsync([productId]);
-        await stmt.finalizeAsync();
-        
-        const rows = result as unknown as { rowsAffected: number };
-        return rows.rowsAffected;
+        const res = await db.runAsync('DELETE FROM products WHERE id = ?', [productId]);
+        return Number(res.changes);
     } catch (error) {
-        console.error('Error deleting product:', error);
+        if (isNativeDbError(error)) {
+            const freshDb = await recoverDatabase();
+            const res = await freshDb.runAsync('DELETE FROM products WHERE id = ?', [productId]);
+            return Number(res.changes);
+        }
         throw error;
     }
 };
@@ -486,143 +383,61 @@ export const deleteProduct = async (db: SQLiteDatabase, productId: number): Prom
 /**
  * Creates a new sale in the system.
  */
-export const addSale = async (
-    db: SQLiteDatabase,
-    total: number,
-    payment: number,
-    change: number,
-    businessName: string,
-    userId: number
-): Promise<number> => {
-    try {
-        const saleDate = new Date().toISOString().slice(0, 10);
-        const saleTime = new Date().toLocaleTimeString('es-MX', { hour12: false });
-        
-        const stmt = await db.prepareAsync(
-            `INSERT INTO sales (
-                sale_date, sale_time, total_amount, payment_received,
-                change_given, business_name, user_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)`
-        );
-        await stmt.executeAsync([
-            saleDate, saleTime, total, payment, change, businessName, userId
-        ]);
-        await stmt.finalizeAsync();
-        
-        // Get the inserted ID
-        const idStmt = await db.prepareAsync('SELECT last_insert_rowid() as id');
-        const idResult = await idStmt.executeAsync();
-        await idStmt.finalizeAsync();
-        
-        const rows = idResult as unknown as { _array: { id: number }[] };
-        return rows._array[0].id;
-    } catch (error) {
-        console.error('Error adding sale:', error);
-        throw error;
-    }
+export const addSale = async (db: SQLiteDatabase, total: number, payment: number, change: number, businessName: string, userId: number): Promise<number> => {
+    const saleDate = new Date().toISOString().slice(0, 10);
+    const saleTime = new Date().toLocaleTimeString('es-MX', { hour12: false });
+    const res = await db.runAsync(
+        `INSERT INTO sales (sale_date, sale_time, total_amount, payment_received, change_given, business_name, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [saleDate, saleTime, total, payment, change, businessName, userId]
+    );
+    return Number(res.lastInsertRowId);
 };
 
 /**
  * Adds items to a sale record.
  */
-export const addSaleItems = async (
-    db: SQLiteDatabase,
-    saleId: number,
-    items: Pick<SaleItem, 'product_id' | 'product_name' | 'quantity' | 'price_at_sale'>[]
-): Promise<void> => {
-    try {
-        const stmt = await db.prepareAsync(
-            `INSERT INTO sale_items (
-                sale_id, product_id, product_name, quantity, price_at_sale
-            ) VALUES (?, ?, ?, ?, ?)`
-        );
-        
+export const addSaleItems = async (db: SQLiteDatabase, saleId: number, items: Pick<SaleItem, 'product_id' | 'product_name' | 'quantity' | 'price_at_sale'>[]): Promise<void> => {
+    if (items.length === 0) return;
+    await db.withTransactionAsync(async () => {
         for (const item of items) {
-            await stmt.executeAsync([
-                saleId,
-                item.product_id,
-                item.product_name,
-                item.quantity,
-                item.price_at_sale
-            ]);
+            await db.runAsync(
+                `INSERT INTO sale_items (sale_id, product_id, product_name, quantity, price_at_sale) VALUES (?, ?, ?, ?, ?)`,
+                [saleId, item.product_id, item.product_name, item.quantity, item.price_at_sale]
+            );
         }
-        
-        await stmt.finalizeAsync();
-    } catch (error) {
-        console.error('Error adding sale items:', error);
-        throw error;
-    }
+    });
 };
 
 /**
  * Gets all sales in the system.
  */
 export const getAllSales = async (db: SQLiteDatabase): Promise<Sale[]> => {
-    try {
-        const stmt = await db.prepareAsync(
-            'SELECT * FROM sales ORDER BY sale_date DESC, sale_time DESC'
-        );
-        const result = await stmt.executeAsync();
-        await stmt.finalizeAsync();
-        
-        const rows = result as unknown as { _array: Sale[] };
-        return rows._array;
-    } catch (error) {
-        console.error('Error getting all sales:', error);
-        throw error;
-    }
+    const rows = await db.getAllAsync('SELECT * FROM sales ORDER BY sale_date DESC, sale_time DESC');
+    return rows as Sale[];
 };
 
 /**
  * Gets items from a specific sale.
  */
 export const getSaleItems = async (db: SQLiteDatabase, saleId: number): Promise<SaleItem[]> => {
-    try {
-        const stmt = await db.prepareAsync('SELECT * FROM sale_items WHERE sale_id = ?');
-        const result = await stmt.executeAsync([saleId]);
-        await stmt.finalizeAsync();
-        
-        const rows = result as unknown as { _array: SaleItem[] };
-        return rows._array;
-    } catch (error) {
-        console.error('Error getting sale items:', error);
-        throw error;
-    }
+    const rows = await db.getAllAsync('SELECT * FROM sale_items WHERE sale_id = ?', [saleId]);
+    return rows as SaleItem[];
 };
 
 /**
  * Gets details of a specific sale.
  */
 export const getSaleById = async (db: SQLiteDatabase, saleId: number): Promise<Sale | null> => {
-    try {
-        const stmt = await db.prepareAsync('SELECT * FROM sales WHERE id = ?');
-        const result = await stmt.executeAsync([saleId]);
-        await stmt.finalizeAsync();
-        
-        const rows = result as unknown as { _array: Sale[] };
-        return rows._array.length > 0 ? rows._array[0] : null;
-    } catch (error) {
-        console.error('Error getting sale by ID:', error);
-        throw error;
-    }
+    const row = await db.getFirstAsync('SELECT * FROM sales WHERE id = ?', [saleId]);
+    return row ?? null;
 };
 
 /**
  * Deletes a sale and its items.
  */
 export const deleteSale = async (db: SQLiteDatabase, saleId: number): Promise<number> => {
-    try {
-        // The sale_items will be deleted automatically due to ON DELETE CASCADE
-        const stmt = await db.prepareAsync('DELETE FROM sales WHERE id = ?');
-        const result = await stmt.executeAsync([saleId]);
-        await stmt.finalizeAsync();
-        
-        const rows = result as unknown as { rowsAffected: number };
-        return rows.rowsAffected;
-    } catch (error) {
-        console.error('Error deleting sale:', error);
-        throw error;
-    }
+    const res = await db.runAsync('DELETE FROM sales WHERE id = ?', [saleId]);
+    return Number(res.changes);
 };
 
 // Expense Management Functions
@@ -630,111 +445,46 @@ export const deleteSale = async (db: SQLiteDatabase, saleId: number): Promise<nu
 /**
  * Records a new expense in the system.
  */
-export const addExpense = async (
-    db: SQLiteDatabase,
-    description: string,
-    amount: number
-): Promise<number> => {
-    try {
-        const expenseDate = new Date().toISOString().slice(0, 10);
-        const expenseTime = new Date().toLocaleTimeString('es-MX', { hour12: false });
-        
-        const stmt = await db.prepareAsync(
-            `INSERT INTO expenses (
-                expense_date, expense_time, description, amount
-            ) VALUES (?, ?, ?, ?)`
-        );
-        await stmt.executeAsync([expenseDate, expenseTime, description, amount]);
-        await stmt.finalizeAsync();
-        
-        // Get the inserted ID
-        const idStmt = await db.prepareAsync('SELECT last_insert_rowid() as id');
-        const idResult = await idStmt.executeAsync();
-        await idStmt.finalizeAsync();
-        
-        const rows = idResult as unknown as { _array: { id: number }[] };
-        return rows._array[0].id;
-    } catch (error) {
-        console.error('Error adding expense:', error);
-        throw error;
-    }
+export const addExpense = async (db: SQLiteDatabase, description: string, amount: number): Promise<number> => {
+    const expenseDate = new Date().toISOString().slice(0, 10);
+    const expenseTime = new Date().toLocaleTimeString('es-MX', { hour12: false });
+    const res = await db.runAsync(
+        `INSERT INTO expenses (expense_date, expense_time, description, amount) VALUES (?, ?, ?, ?)`,
+        [expenseDate, expenseTime, description, amount]
+    );
+    return Number(res.lastInsertRowId);
 };
 
 /**
  * Gets all expenses in the system.
  */
 export const getAllExpenses = async (db: SQLiteDatabase): Promise<Expense[]> => {
-    try {
-        const stmt = await db.prepareAsync(
-            'SELECT * FROM expenses ORDER BY expense_date DESC, expense_time DESC'
-        );
-        const result = await stmt.executeAsync();
-        await stmt.finalizeAsync();
-        
-        const rows = result as unknown as { _array: Expense[] };
-        return rows._array;
-    } catch (error) {
-        console.error('Error getting all expenses:', error);
-        throw error;
-    }
+    const rows = await db.getAllAsync('SELECT * FROM expenses ORDER BY expense_date DESC, expense_time DESC');
+    return rows as Expense[];
 };
 
 /**
  * Gets a specific expense by its ID.
  */
 export const getExpenseById = async (db: SQLiteDatabase, expenseId: number): Promise<Expense | null> => {
-    try {
-        const stmt = await db.prepareAsync('SELECT * FROM expenses WHERE id = ?');
-        const result = await stmt.executeAsync([expenseId]);
-        await stmt.finalizeAsync();
-        
-        const rows = result as unknown as { _array: Expense[] };
-        return rows._array.length > 0 ? rows._array[0] : null;
-    } catch (error) {
-        console.error('Error getting expense by ID:', error);
-        throw error;
-    }
+    const row = await db.getFirstAsync('SELECT * FROM expenses WHERE id = ?', [expenseId]);
+    return row ?? null;
 };
 
 /**
  * Updates an existing expense.
  */
-export const updateExpense = async (
-    db: SQLiteDatabase,
-    expenseId: number,
-    description: string,
-    amount: number
-): Promise<number> => {
-    try {
-        const stmt = await db.prepareAsync(
-            'UPDATE expenses SET description = ?, amount = ? WHERE id = ?'
-        );
-        const result = await stmt.executeAsync([description, amount, expenseId]);
-        await stmt.finalizeAsync();
-        
-        const rows = result as unknown as { rowsAffected: number };
-        return rows.rowsAffected;
-    } catch (error) {
-        console.error('Error updating expense:', error);
-        throw error;
-    }
+export const updateExpense = async (db: SQLiteDatabase, expenseId: number, description: string, amount: number): Promise<number> => {
+    const res = await db.runAsync('UPDATE expenses SET description = ?, amount = ? WHERE id = ?', [description, amount, expenseId]);
+    return Number(res.changes);
 };
 
 /**
  * Deletes an expense by its ID.
  */
 export const deleteExpense = async (db: SQLiteDatabase, expenseId: number): Promise<number> => {
-    try {
-        const stmt = await db.prepareAsync('DELETE FROM expenses WHERE id = ?');
-        const result = await stmt.executeAsync([expenseId]);
-        await stmt.finalizeAsync();
-        
-        const rows = result as unknown as { rowsAffected: number };
-        return rows.rowsAffected;
-    } catch (error) {
-        console.error('Error deleting expense:', error);
-        throw error;
-    }
+    const res = await db.runAsync('DELETE FROM expenses WHERE id = ?', [expenseId]);
+    return Number(res.changes);
 };
 
 // Costing Management Functions
@@ -742,140 +492,155 @@ export const deleteExpense = async (db: SQLiteDatabase, expenseId: number): Prom
 /**
  * Creates a new costing record.
  */
-export const addCosting = async (
-    db: SQLiteDatabase,
-    name: string,
-    totalCost: number
-): Promise<number> => {
-    try {
-        const costingDate = new Date().toISOString().slice(0, 10);
-        
-        const stmt = await db.prepareAsync(
-            'INSERT INTO costings (name, total_cost, costing_date) VALUES (?, ?, ?)'
-        );
-        await stmt.executeAsync([name, totalCost, costingDate]);
-        await stmt.finalizeAsync();
-        
-        // Get the inserted ID
-        const idStmt = await db.prepareAsync('SELECT last_insert_rowid() as id');
-        const idResult = await idStmt.executeAsync();
-        await idStmt.finalizeAsync();
-        
-        const rows = idResult as unknown as { _array: { id: number }[] };
-        return rows._array[0].id;
-    } catch (error) {
-        console.error('Error adding costing:', error);
-        throw error;
-    }
+export const addCosting = async (db: SQLiteDatabase, name: string, totalCost: number): Promise<number> => {
+    const costingDate = new Date().toISOString().slice(0, 10);
+    const res = await db.runAsync('INSERT INTO costings (name, total_cost, costing_date) VALUES (?, ?, ?)', [name, totalCost, costingDate]);
+    return Number(res.lastInsertRowId);
 };
 
 /**
  * Adds items to a costing record.
  */
-export const addCostingItems = async (
-    db: SQLiteDatabase,
-    costingId: number,
-    items: Omit<CostingItem, 'id' | 'costing_id'>[]
-): Promise<void> => {
-    try {
-        const stmt = await db.prepareAsync(
-            `INSERT INTO costing_items (
-                costing_id, item_name, unit_of_measure, unit_price, quantity_used
-            ) VALUES (?, ?, ?, ?, ?)`
-        );
-        
+export const addCostingItems = async (db: SQLiteDatabase, costingId: number, items: Omit<CostingItem, 'id' | 'costing_id'>[]): Promise<void> => {
+    if (items.length === 0) return;
+    await db.withTransactionAsync(async () => {
         for (const item of items) {
-            await stmt.executeAsync([
-                costingId,
-                item.item_name,
-                item.unit_of_measure,
-                item.unit_price,
-                item.quantity_used
-            ]);
+            await db.runAsync(
+                `INSERT INTO costing_items (costing_id, item_name, unit_of_measure, unit_price, quantity_used) VALUES (?, ?, ?, ?, ?)`,
+                [costingId, item.item_name, item.unit_of_measure, item.unit_price, item.quantity_used]
+            );
         }
-        
-        await stmt.finalizeAsync();
-    } catch (error) {
-        console.error('Error adding costing items:', error);
-        throw error;
-    }
+    });
 };
 
 /**
  * Gets all costing records in the system.
  */
 export const getAllCostings = async (db: SQLiteDatabase): Promise<Costing[]> => {
-    try {
-        const stmt = await db.prepareAsync(
-            'SELECT * FROM costings ORDER BY costing_date DESC'
-        );
-        const result = await stmt.executeAsync();
-        await stmt.finalizeAsync();
-        
-        const rows = result as unknown as { _array: Costing[] };
-        return rows._array;
-    } catch (error) {
-        console.error('Error getting all costings:', error);
-        throw error;
-    }
+    const rows = await db.getAllAsync('SELECT * FROM costings ORDER BY costing_date DESC');
+    return rows as Costing[];
 };
 
 /**
  * Gets items from a specific costing record.
  */
-export const getCostingItems = async (
-    db: SQLiteDatabase,
-    costingId: number
-): Promise<CostingItem[]> => {
-    try {
-        const stmt = await db.prepareAsync(
-            'SELECT * FROM costing_items WHERE costing_id = ?'
-        );
-        const result = await stmt.executeAsync([costingId]);
-        await stmt.finalizeAsync();
-        
-        const rows = result as unknown as { _array: CostingItem[] };
-        return rows._array;
-    } catch (error) {
-        console.error('Error getting costing items:', error);
-        throw error;
-    }
+export const getCostingItems = async (db: SQLiteDatabase, costingId: number): Promise<CostingItem[]> => {
+    const rows = await db.getAllAsync('SELECT * FROM costing_items WHERE costing_id = ?', [costingId]);
+    return rows as CostingItem[];
 };
 
 /**
  * Gets a specific costing record by its ID.
  */
-export const getCostingById = async (
-    db: SQLiteDatabase,
-    costingId: number
-): Promise<Costing | null> => {
-    try {
-        const stmt = await db.prepareAsync('SELECT * FROM costings WHERE id = ?');
-        const result = await stmt.executeAsync([costingId]);
-        await stmt.finalizeAsync();
-        
-        const rows = result as unknown as { _array: Costing[] };
-        return rows._array.length > 0 ? rows._array[0] : null;
-    } catch (error) {
-        console.error('Error getting costing by ID:', error);
-        throw error;
-    }
+export const getCostingById = async (db: SQLiteDatabase, costingId: number): Promise<Costing | null> => {
+    const row = await db.getFirstAsync('SELECT * FROM costings WHERE id = ?', [costingId]);
+    return row ?? null;
 };
 
 /**
  * Deletes a costing record and its items.
  */
 export const deleteCosting = async (db: SQLiteDatabase, costingId: number): Promise<number> => {
-    try {
-        // The costing_items will be deleted automatically due to ON DELETE CASCADE
-        const stmt = await db.prepareAsync('DELETE FROM costings WHERE id = ?');
-        const result = await stmt.executeAsync([costingId]);
-        await stmt.finalizeAsync();
-        
-        const rows = result as unknown as { rowsAffected: number };
-        return rows.rowsAffected;
-    } catch (error) {
-        console.error('Error deleting costing:', error);
-        throw error;
-    }
+    const res = await db.runAsync('DELETE FROM costings WHERE id = ?', [costingId]);
+    return Number(res.changes);
 };
+
+// --- Maintenance / Admin helpers ---
+/**
+ * Resetea la contraseña del/los usuario(s) administrador(es) a un hash dado.
+ * No crea usuarios, solo actualiza password_hash donde is_admin = 1.
+ */
+export const resetAdminPassword = async (db: SQLiteDatabase, newPasswordHash: string): Promise<number> => {
+    const res = await db.runAsync('UPDATE users SET password_hash = ? WHERE is_admin = 1', [newPasswordHash]);
+    return Number(res.changes);
+};
+
+/**
+ * Elimina todos los usuarios de la tabla.
+ */
+export const clearAllUsers = async (db: SQLiteDatabase): Promise<number> => {
+    const res = await db.runAsync('DELETE FROM users');
+    return Number(res.changes);
+};
+
+/**
+ * Crea un usuario admin nuevo con el username y contraseña hash dados.
+ */
+export const createFreshAdmin = async (db: SQLiteDatabase, username: string = 'admin', passwordHash: string): Promise<number> => {
+    const res = await db.runAsync(
+        `INSERT INTO users (username, password_hash, is_admin) 
+         VALUES (?, ?, 1)`,
+        [username, passwordHash]
+    );
+    return Number(res.lastInsertRowId);
+};
+
+/**
+ * Crea un usuario con todos los permisos disponibles.
+ */
+export const createUserWithAllPermissions = async (db: SQLiteDatabase, username: string, passwordHash: string): Promise<number> => {
+    // Crear el usuario
+    const userRes = await db.runAsync(
+        `INSERT INTO users (username, password_hash, is_admin) 
+         VALUES (?, ?, 0)`,
+        [username, passwordHash]
+    );
+    const userId = Number(userRes.lastInsertRowId);
+    
+    // Obtener todos los permisos
+    const permissions = await db.getAllAsync('SELECT id FROM permissions');
+    
+    // Asignar todos los permisos al usuario
+    for (const permission of permissions) {
+        await db.runAsync(
+            'INSERT INTO user_permissions (user_id, permission_id) VALUES (?, ?)',
+            [userId, permission.id]
+        );
+    }
+    
+    return userId;
+};
+
+// Exportación por defecto del módulo que contiene todas las funciones públicas
+export default {
+    openDB,
+    createTables,
+    insertInitialPermissions,
+    getUserByUsername,
+    getUserById,
+    getAllUsers,
+    addUser,
+    updateUser,
+    deleteUser,
+    getUserPermissions,
+    seedAdminUser,
+    clearAllUsers,
+    createFreshAdmin,
+    createUserWithAllPermissions,
+    getAllPermissions,
+    addPermission,
+    assignPermissionToUser,
+    revokePermissionFromUser,
+    addProduct,
+    getAllProducts,
+    updateProduct,
+    deleteProduct,
+    addSale,
+    addSaleItems,
+    getAllSales,
+    getSaleItems,
+    getSaleById,
+    deleteSale,
+    addExpense,
+    getAllExpenses,
+    getExpenseById,
+    updateExpense,
+    deleteExpense,
+    addCosting,
+    addCostingItems,
+    getAllCostings,
+    getCostingItems,
+    getCostingById,
+    deleteCosting,
+    resetAdminPassword
+    };

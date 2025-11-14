@@ -1,13 +1,19 @@
-{
+﻿{
   "expo": {
     "name": "Brunch-and-bites-pos",
-    "slug": "Brunch-and-bites-pos",
+    "slug": "brunch-and-bites-pos",
     "version": "1.0.0",
+    "sdkVersion": "54.0.0",
     "orientation": "landscape",
-    "icon": "./assets/images/icon.png",
-    "scheme": "brunchandbitespos",
-    "userInterfaceStyle": "automatic",
+    "icon": "./assets/images/logo.jpeg",
+    "scheme": "brunchandbites",
+    "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
     "ios": {
       "supportsTablet": true
     },
@@ -19,9 +25,13 @@
       "edgeToEdgeEnabled": true
     },
     "web": {
-      "bundler": "metro",
+      "bundler": "webpack",
       "output": "static",
       "favicon": "./assets/images/favicon.png"
+    },
+    "updates": {
+      "enabled": false,
+      "checkAutomatically": "ON_ERROR_RECOVERY"
     },
     "plugins": [
       "expo-router",

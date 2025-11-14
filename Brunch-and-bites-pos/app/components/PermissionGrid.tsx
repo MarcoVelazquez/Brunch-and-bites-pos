@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, ScrollView, StyleSheet } from 'react-native';
+import { View, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import type { Permission, User } from '../lib/database.types';
 import AppText from './Text';
 import Button from './Button';
@@ -20,9 +20,12 @@ export default function PermissionGrid({
     isLoading,
     onTogglePermission 
 }: PermissionGridProps) {
+    const { width } = useWindowDimensions();
+    const isMobile = width < 768;
+    
     return (
-        <Card style={styles.container}>
-            <AppText variant="h2">
+        <Card style={isMobile ? styles.containerMobile : styles.container}>
+            <AppText variant="h2" style={isMobile ? { fontSize: 20 } : undefined}>
                 Permisos de {user.username}
             </AppText>
             <ScrollView style={styles.scroll}>
@@ -32,7 +35,8 @@ export default function PermissionGrid({
                             key={permission.id}
                             title={permission.name}
                             variant={userPermissions.includes(permission.name) ? "primary" : "secondary"}
-                            style={styles.permissionItem}
+                            style={isMobile ? styles.permissionItemMobile : styles.permissionItem}
+                            textStyle={isMobile ? { fontSize: 12 } : undefined}
                             onPress={() => !isLoading && onTogglePermission(permission)}
                         />
                     ))}
@@ -47,6 +51,10 @@ const styles = StyleSheet.create({
         flex: 1,
         padding: 15,
     },
+    containerMobile: {
+        flex: 1,
+        padding: 10,
+    },
     scroll: {
         flex: 1,
         marginTop: 15,
@@ -58,5 +66,8 @@ const styles = StyleSheet.create({
     },
     permissionItem: {
         minWidth: 150,
+    },
+    permissionItemMobile: {
+        minWidth: 100,
     },
 });

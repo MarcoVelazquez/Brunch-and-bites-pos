@@ -2,44 +2,59 @@ const config = {
   name: 'Brunch and Bites POS',
   slug: 'brunch-and-bites-pos',
   version: '1.0.0',
-  orientation: 'portrait',
+  sdkVersion: '54.0.0',
+  orientation: 'landscape',
   icon: './assets/images/icon.png',
-  scheme: 'myapp',
-  userInterfaceStyle: 'automatic',
+  scheme: 'brunchandbites',
+  userInterfaceStyle: 'light',
   splash: {
     image: './assets/images/splash-icon.png',
     resizeMode: 'contain',
     backgroundColor: '#ffffff'
   },
+  // Offline-only: disable OTA updates and EAS update URLs
   updates: {
-    fallbackToCacheTimeout: 0
+    enabled: false,
+    checkAutomatically: 'ON_ERROR_RECOVERY'
   },
   assetBundlePatterns: [
     '**/*'
   ],
   ios: {
-    supportsTablet: true
+    supportsTablet: true,
+    bundleIdentifier: 'com.brunchandbites.pos'
   },
   android: {
     adaptiveIcon: {
       foregroundImage: './assets/images/adaptive-icon.png',
       backgroundColor: '#ffffff'
-    }
+    },
+    package: 'com.brunchandbites.pos'
   },
   web: {
-    favicon: './assets/images/favicon.png'
+    favicon: './assets/images/favicon.png',
+    bundler: 'metro'
   },
   plugins: [
     'expo-router',
-    'expo-secure-store'
+    [
+      'expo-screen-orientation',
+      {
+        initialOrientation: 'LANDSCAPE'
+      }
+    ]
   ],
   extra: {
     router: {
-      origin: false
+      origin: false // ensure local routing without remote origin
+    },
+    eas: {
+      projectId: '0b5c5a66-6902-4abd-ba6f-eab83f3942ad'
     }
   },
   experiments: {
-    typedRoutes: true
+    typedRoutes: true,
+    tsconfigPaths: true
   }
 };
 

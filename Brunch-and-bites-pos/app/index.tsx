@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, Image, StyleSheet, Alert } from "react-native";
 import { useRouter } from "expo-router";
+import { useAuth } from './contexts/AuthContext';
 
 
 
@@ -8,37 +9,32 @@ export default function Login() {
   const [usuario, setUsuario] = useState("");
   const [contrasena, setContrasena] = useState("");
   const router = useRouter();
+  const { login } = useAuth();
 
-
-  type Usuario = { nombre: string; contraseña: string };
-  const usuarios: Usuario[] = [
-  { nombre: "Ana", contraseña: "sexo anal" },
-  { nombre: "Luis", contraseña: "sexo nasal" },
-];
-
-const verificarCredenciales = (usuario: string, contrasena: string): boolean => {
-  const usuarioEncontrado = usuarios.find(
-    (user) => user.nombre === usuario && user.contraseña === contrasena
-  );
-  return !!usuarioEncontrado;
-};
-
-const handleLogin = () => {
-  if (usuario === "" || contrasena === "") {
-    Alert.alert("Error", "Por favor ingresa usuario y contraseña");
-  } else if (!verificarCredenciales(usuario, contrasena)) {
-    Alert.alert("Error", "Usuario o contraseña incorrectos");
-  } else {
-    Alert.alert("Bienvenido", `Hola, ${usuario}`);
-    router.push("/caja");
-  }
-};
+  const handleLogin = async () => {
+    if (usuario === "" || contrasena === "") {
+      Alert.alert("Error", "Por favor ingresa usuario y contraseña");
+      return;
+    } 
+    
+    try {
+      const success = await login(usuario, contrasena);
+      if (success) {
+        router.push("/caja");  // 🎯 Redirigir directamente a la caja
+      } else {
+        Alert.alert("Error", "Usuario o contraseña incorrectos");
+      }
+    } catch (error) {
+      console.error('Error en login:', error);
+      Alert.alert("Error", "Problema al iniciar sesión");
+    }
+  };
 
   return (
     <View style={styles.root}>
       <View style={styles.centered}>
         <Image
-          source={require("../assets/images/icon.png")}
+          source={require("../assets/images/logo.jpeg")}
           style={styles.logo}
         />
         <Text style={styles.headerTitle}>Iniciar sesión</Text>
