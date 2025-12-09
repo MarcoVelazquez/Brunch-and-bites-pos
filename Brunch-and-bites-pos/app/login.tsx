@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { View, StyleSheet, Alert, ScrollView, KeyboardAvoidingView, Platform, useWindowDimensions, Image } from 'react-native';
+import { useState, useEffect } from 'react';
+import { View, StyleSheet, Alert, ScrollView, KeyboardAvoidingView, Platform, useWindowDimensions, Image, BackHandler } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from './contexts/AuthContext';
 import { validateUsername, hashPassword, verifyPassword } from './lib/auth';
@@ -19,6 +19,16 @@ export default function LoginScreen() {
     const router = useRouter();
     
     const { login, isLoading: authLoading } = useAuth();
+
+    // Prevenir navegación hacia atrás en Android
+    useEffect(() => {
+        const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+            // Retornar true previene que se navegue hacia atrás
+            return true;
+        });
+
+        return () => backHandler.remove();
+    }, []);
 
     const handleLogin = async () => {
         if (!username || !password) {

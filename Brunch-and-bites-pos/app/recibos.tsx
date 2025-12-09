@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, Alert, Image, useWindowDimensions } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, Alert, Image, useWindowDimensions, Platform } from "react-native";
 import ProtectedLayout from './components/ProtectedLayout';
 import { openDB, getAllSales, getSaleItems, deleteSale } from './lib/database.refactor';
 import type { Sale, SaleItem } from './lib/database.types';
+import * as Print from 'expo-print';
+import * as FileSystem from 'expo-file-system/legacy';
 
 interface SaleWithItems extends Sale {
   items: SaleItem[];
@@ -154,6 +156,254 @@ export default function RecibosScreen() {
     }
   };
 
+  const exportToPDF = async () => {
+    if (!reciboSeleccionado) return;
+
+    try {
+      // Cargar el logo como base64
+      const logoUri = FileSystem.documentDirectory + '../assets/images/icon.png';
+      let logoBase64 = '';
+      try {
+        logoBase64 = await FileSystem.readAsStringAsync(logoUri, { encoding: FileSystem.EncodingType.Base64 });
+      } catch (e) {
+        console.log('No se pudo cargar el logo:', e);
+      }
+
+      const html = `
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <style>
+              body { 
+                font-family: Arial, sans-serif; 
+                padding: 40px;
+                max-width: 600px;
+                margin: 0 auto;
+              }
+              .header { 
+                text-align: center; 
+                margin-bottom: 30px;
+                border-bottom: 2px solid #38b24d;
+                padding-bottom: 20px;
+              }
+              .logo { 
+                width: 120px;
+                height: 120px;
+                border-radius: 60px;
+                margin: 0 auto 20px;
+                display: block;
+              }
+              .header h1 { 
+                color: #38b24d; 
+                margin: 10px 0;
+                font-size: 32px;
+              }
+              .header h2 { 
+                color: #666; 
+                margin: 5px 0;
+                font-size: 18px;
+                font-weight: normal;
+              }
+              .info { 
+                margin: 20px 0;
+                background-color: #f9f9f9;
+                padding: 15px;
+                border-radius: 8px;
+              }
+              .info-row { 
+                display: flex; 
+                justify-content: space-between;
+                margin: 8px 0;
+                font-size: 14px;
+              }
+              .info-label { 
+                font-weight: bold;
+                color: #555;
+              }
+              .products { 
+                margin: 20px 0;
+              }
+              .products h3 { 
+                color: #333;
+                border-bottom: 1px solid #ddd;
+                padding-bottom: 10px;
+                margin-bottom: 15px;
+              }
+              .product-item { 
+                display: flex;
+                justify-content: space-between;
+                padding: 10px;
+                border-bottom: 1px solid #f0f0f0;
+              }
+              .product-name { 
+                flex: 1;
+                color: #333;
+              }
+              .product-qty { 
+                width: 60px;
+                text-align: center;
+                color: #666;
+              }
+              .product-price { 
+                width: 100px;
+                text-align: right;
+                font-weight: bold;
+                color: #333;
+              }
+              .totals { 
+                margin-top: 30px;
+                border-top: 2px solid #38b24d;
+                padding-top: 20px;
+              }
+              .total-row { 
+                display: flex;
+                justify-content: space-between;
+                margin: 10px 0;
+                font-size: 16px;
+              }
+              .total-row.grand { 
+                font-size: 20px;
+                font-weight: bold;
+                color: #38b24d;
+                margin-top: 15px;
+                padding-top: 15px;
+                border-top: 1px solid #ddd;
+              }
+              .footer { 
+                margin-top: 40px;
+                text-align: center;
+                color: #999;
+                font-size: 12px;
+                border-top: 1px solid #eee;
+                padding-top: 20px;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              ${logoBase64 ? `<img src="data:image/png;base64,${logoBase64}" class="logo" alt="Logo" />` : ''}
+              <h1>Brunch & Bites</h1>
+              <h2>Recibo de Venta</h2>
+            </div>
+            
+            <div class="info">
+              <div class="info-row">
+                <span class="info-label">Fecha:</span>
+                <span>${reciboSeleccionado.sale_date}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Hora:</span>
+                <span>${reciboSeleccionado.sale_time}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Empresa:</span>
+                <span>${reciboSeleccionado.business_name || 'N/A'}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Recibo #:</span>
+                <span>${reciboSeleccionado.id}</span>
+              </div>
+            </div>
+
+            <div class="products">
+              <h3>Productos</h3>
+              ${reciboSeleccionado.items.map(item => `
+                <div class="product-item">
+                  <span class="product-name">${item.product_name}</span>
+                  <span class="product-qty">x${item.quantity}</span>
+                  <span class="product-price">$${(item.price_at_sale * item.quantity).toFixed(2)}</span>
+                </div>
+              `).join('')}
+            </div>
+
+            <div class="totals">
+              <div class="total-row">
+                <span>Subtotal:</span>
+                <span>$${reciboSeleccionado.total_amount.toFixed(2)}</span>
+              </div>
+              <div class="total-row">
+                <span>Pago recibido:</span>
+                <span>$${reciboSeleccionado.payment_received.toFixed(2)}</span>
+              </div>
+              <div class="total-row">
+                <span>Cambio:</span>
+                <span>$${reciboSeleccionado.change_given.toFixed(2)}</span>
+              </div>
+              <div class="total-row grand">
+                <span>Total:</span>
+                <span>$${reciboSeleccionado.total_amount.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div class="footer">
+              <p>¡Gracias por su compra!</p>
+              <p>Brunch & Bites POS - Sistema de punto de venta</p>
+            </div>
+          </body>
+        </html>
+      `;
+
+      // Generar PDF
+      const { uri } = await Print.printToFileAsync({ html });
+      
+      // Guardar PDF automáticamente
+      if (Platform.OS === 'web') {
+        const newWindow = window.open(uri, '_blank');
+        if (!newWindow) {
+          Alert.alert('PDF generado', `El PDF se guardó en: ${uri}`);
+        }
+      } else {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const fileName = `Recibo_${reciboSeleccionado.id}_${timestamp}.pdf`;
+        
+        // Crear directorio si no existe
+        const recibosDir = `${FileSystem.documentDirectory}recibos/`;
+        const dirInfo = await FileSystem.getInfoAsync(recibosDir);
+        if (!dirInfo.exists) {
+          await FileSystem.makeDirectoryAsync(recibosDir, { intermediates: true });
+        }
+        
+        // Copiar el PDF al directorio de recibos
+        const newPath = `${recibosDir}${fileName}`;
+        await FileSystem.copyAsync({ from: uri, to: newPath });
+        
+        // En Android, opcionalmente guardar en carpeta pública
+        if (Platform.OS === 'android') {
+          try {
+            const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+            if (permissions.granted) {
+              const base64 = await FileSystem.readAsStringAsync(newPath, {
+                encoding: FileSystem.EncodingType.Base64,
+              });
+              await FileSystem.StorageAccessFramework.createFileAsync(
+                permissions.directoryUri,
+                fileName,
+                'application/pdf'
+              )
+                .then(async (uri) => {
+                  await FileSystem.writeAsStringAsync(uri, base64, {
+                    encoding: FileSystem.EncodingType.Base64,
+                  });
+                })
+                .catch((e) => console.log('Error saving to public folder:', e));
+            }
+          } catch (error) {
+            console.log('User cancelled or error:', error);
+          }
+        }
+        
+        Alert.alert(
+          'Recibo guardado',
+          `El recibo se guardó en:\n${newPath}`,
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      Alert.alert('Error', 'No se pudo generar el PDF del recibo');
+    }
+  };
+
   return (
     <ProtectedLayout title="Recibos" requiredPermission="VER_VENTAS">
       <View style={styles.productsTable}>
@@ -237,9 +487,14 @@ export default function RecibosScreen() {
                 <Text style={styles.reciboTotal}>${reciboSeleccionado?.change_given.toFixed(2)}</Text>
               </View>
             </View>
-            <TouchableOpacity style={styles.imprimirBtn} onPress={() => setModalVisible(false)}>
-              <Text style={styles.imprimirBtnText}>Cerrar</Text>
-            </TouchableOpacity>
+            <View style={styles.modalButtonsRow}>
+              <TouchableOpacity style={[styles.modalButton, { backgroundColor: '#0066cc' }]} onPress={exportToPDF}>
+                <Text style={styles.modalButtonText}>📄 Exportar PDF</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalButton, { backgroundColor: '#38b24d' }]} onPress={() => setModalVisible(false)}>
+                <Text style={styles.modalButtonText}>Cerrar</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>

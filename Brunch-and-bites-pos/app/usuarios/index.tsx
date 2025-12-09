@@ -1,7 +1,7 @@
 ﻿import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, useWindowDimensions } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, useWindowDimensions, TextInput, Modal } from 'react-native';
 import ProtectedLayout from '../components/ProtectedLayout';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
 import { getAllUsers, getUserPermissions, deleteUser } from '../lib/database.refactor';
 import type { User } from '../lib/database.types';
@@ -17,6 +17,9 @@ export default function UsuariosScreen() {
   const { checkPermission, db, user: currentUser } = useAuth();
   const [users, setUsers] = useState<UserWithPermissions[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [query, setQuery] = useState('');
+  const [showPermsModal, setShowPermsModal] = useState(false);
+  const [selectedUserPerms, setSelectedUserPerms] = useState<{username: string; perms: string[]}>({ username: '', perms: [] });
 
   const loadUsers = async () => {
     if (!db) return;
@@ -40,6 +43,15 @@ export default function UsuariosScreen() {
   useEffect(() => {
     loadUsers();
   }, [db]);
+
+  // Reload users when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      if (db) {
+        loadUsers();
+      }
+    }, [db])
+  );
 
   const handleDeleteUser = async (userId: number, username: string) => {
     if (!db) return;
@@ -79,18 +91,44 @@ export default function UsuariosScreen() {
           )}
         </View>
 
+        {/* Buscador */}
+        <View style={styles.searchRow}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Buscar por nombre de usuario"
+            value={query}
+            onChangeText={setQuery}
+          />
+        </View>
+
         {/* Lista de usuarios */}
         <ScrollView>
           {isLoading ? (
             <Text style={{ textAlign: 'center', marginTop: 20 }}>Cargando usuarios...</Text>
-          ) : users.map((user, idx) => (
+          ) : users
+              .filter(u => u.username.toLowerCase().includes(query.trim().toLowerCase()))
+              .map((user) => (
             <View style={[styles.tableRow, isMobile && { paddingVertical: 8 }]} key={user.id}>
               <View style={styles.rowContent}>
-                <Text style={[styles.tableCell, { flex: isMobile ? 3 : 2, fontSize: isMobile ? 14 : 18 }]} numberOfLines={1}>{user.username}</Text>
+                <View style={[{ flex: isMobile ? 3 : 2, paddingHorizontal: 4 }] }>
+                  <Text style={[styles.tableCell, { fontSize: isMobile ? 14 : 18 }]} numberOfLines={1}>{user.username}</Text>
+                  <View style={{ flexDirection: 'row', gap: 6, marginTop: 2 }}>
+                    {user.is_admin && <Text style={styles.badgeAdmin}>Admin</Text>}
+                    {currentUser?.id === user.id && <Text style={styles.badgeYou}>Tú</Text>}
+                  </View>
+                </View>
                 <Text style={[styles.tableCell, { flex: 2, fontSize: isMobile ? 14 : 18 }]} numberOfLines={1}>
                   {user.is_admin ? 'Admin' : user.permissionList.slice(0, 2).join(', ') + (user.permissionList.length > 2 ? '...' : '')}
                 </Text>
                 <View style={[styles.actionButtons, { flex: isMobile ? 2 : 1 }, isMobile && { gap: 4 }]}> 
+                  {!user.is_admin && (
+                    <TouchableOpacity
+                      style={[styles.viewBtnSmall, isMobile && { width: 24, height: 24, borderRadius: 12 }]}
+                      onPress={() => { setSelectedUserPerms({ username: user.username, perms: user.permissionList }); setShowPermsModal(true); }}
+                    >
+                      <Text style={[styles.editBtnText, isMobile && { fontSize: 10 }]}>👁️</Text>
+                    </TouchableOpacity>
+                  )}
                   {user.id !== currentUser?.id && (
                     <>
                       <TouchableOpacity style={[styles.editBtnSmall, isMobile && { width: 24, height: 24, borderRadius: 12 }]} onPress={() => router.push({ pathname: "/usuarios/[id]", params: { id: user.id.toString() } })}>
@@ -106,6 +144,27 @@ export default function UsuariosScreen() {
             </View>
           ))}
         </ScrollView>
+
+        {/* Modal de permisos del usuario */}
+        <Modal visible={showPermsModal} transparent animationType="fade" onRequestClose={() => setShowPermsModal(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <Text style={{ fontWeight: 'bold', fontSize: 18, marginBottom: 10 }}>Permisos de {selectedUserPerms.username}</Text>
+              <ScrollView style={{ maxHeight: 240 }}>
+                {selectedUserPerms.perms.length === 0 ? (
+                  <Text>No tiene permisos específicos</Text>
+                ) : (
+                  selectedUserPerms.perms.map((p, i) => (
+                    <Text key={i} style={{ paddingVertical: 6 }}>• {p}</Text>
+                  ))
+                )}
+              </ScrollView>
+              <TouchableOpacity style={[styles.editBtnSmall, { alignSelf: 'flex-end', marginTop: 10, backgroundColor: '#38b24d' }]} onPress={() => setShowPermsModal(false)}>
+                <Text style={styles.editBtnText}>Cerrar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       </View>
     </ProtectedLayout>
   );
@@ -147,6 +206,21 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginTop: -2,
   },
+  searchRow: {
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderColor: '#eee'
+  },
+  searchInput: {
+    height: 36,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    backgroundColor: '#fff'
+  },
   tableRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -175,6 +249,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  viewBtnSmall: {
+    backgroundColor: '#6c757d',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   editBtnText: {
     color: '#fff',
     fontSize: 14,
@@ -190,5 +272,35 @@ const styles = StyleSheet.create({
   deleteBtnText: {
     color: '#fff',
     fontSize: 14,
+  },
+  badgeAdmin: {
+    backgroundColor: '#2d5016',
+    color: '#fff',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    fontSize: 10,
+    borderRadius: 12,
+    overflow: 'hidden'
+  },
+  badgeYou: {
+    backgroundColor: '#1463b3',
+    color: '#fff',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    fontSize: 10,
+    borderRadius: 12,
+    overflow: 'hidden'
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  modalCard: {
+    width: 320,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16
   },
 });

@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "sdkVersion": "54.0.0",
     "orientation": "landscape",
-    "icon": "./assets/images/logo.jpeg",
+    "icon": "./assets/images/icon.png",
     "scheme": "brunchandbites",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
@@ -22,6 +22,8 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
+      "icon": "./assets/images/icon.png",
+      "package": "com.brunchandbites.pos",
       "edgeToEdgeEnabled": true
     },
     "web": {

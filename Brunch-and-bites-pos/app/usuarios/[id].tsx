@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { View, StyleSheet, Alert, ScrollView } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { getUserById, getUserPermissions, getAllPermissions, updateUser, assignPermissionToUser, revokePermissionFromUser } from '../lib/database.refactor';
@@ -34,6 +34,9 @@ export default function EditUser() {
     });
     const [userPermissions, setUserPermissions] = useState<string[]>([]);
     const [availablePermissions, setAvailablePermissions] = useState<Permission[]>([]);
+    const [showPwd, setShowPwd] = useState(false);
+    const [showConfirm, setShowConfirm] = useState(false);
+    const [permFilter, setPermFilter] = useState('');
 
     useEffect(() => {
         loadUser();
@@ -130,7 +133,7 @@ export default function EditUser() {
             Alert.alert(
                 'Éxito',
                 'Usuario actualizado correctamente',
-                [{ text: 'OK', onPress: () => router.back() }]
+                [{ text: 'OK', onPress: () => router.replace('/usuarios') }]
             );
         } catch (error) {
             console.error('Error updating user:', error);
@@ -138,6 +141,33 @@ export default function EditUser() {
         } finally {
             setIsSaving(false);
         }
+    };
+
+    const pwdStrength = useMemo(() => {
+        const p = formData.newPassword || '';
+        let score = 0;
+        if (p.length >= 8) score++;
+        if (/[A-Z]/.test(p) && /[a-z]/.test(p)) score++;
+        if (/\d/.test(p)) score++;
+        if (/[^A-Za-z0-9]/.test(p)) score++;
+        const level = score <= 1 ? 'Débil' : score === 2 ? 'Media' : score === 3 ? 'Buena' : 'Fuerte';
+        const color = score <= 1 ? '#dc3545' : score === 2 ? '#ff9800' : score === 3 ? '#4caf50' : '#2e7d32';
+        return { level, color };
+    }, [formData.newPassword]);
+
+    // Permission role presets
+    const rolePresets: Record<string, string[]> = {
+        'Cajero': ['COBRAR', 'ABRIR_CAJA', 'CERRAR_CAJA'],
+        'Gerente': ['COBRAR', 'ABRIR_CAJA', 'CERRAR_CAJA', 'VER_REPORTES', 'VER_GASTOS', 'REGISTRAR_GASTOS', 'VER_COSTEOS', 'REALIZAR_COSTEOS'],
+        'Inventario': ['AGREGAR_PRODUCTOS', 'EDITAR_PRODUCTOS', 'ELIMINAR_PRODUCTOS', 'GESTIONAR_INVENTARIO'],
+        'Reportes': ['VER_REPORTES', 'VER_GASTOS', 'VER_COSTEOS']
+    };
+
+    const applyRolePreset = (roleName: string) => {
+        console.log('Aplicando rol:', roleName);
+        const presetPermissions = rolePresets[roleName] || [];
+        console.log('Permisos del rol:', presetPermissions);
+        setUserPermissions(presetPermissions);
     };
 
     if (isLoading) {
@@ -161,28 +191,41 @@ export default function EditUser() {
                             disabled={isSaving}
                         />
 
-                        <Input
-                            label="Nueva contraseña"
-                            placeholder="Dejar en blanco para no cambiar"
-                            value={formData.newPassword}
-                            onChangeText={(text: string) => setFormData(prev => ({ ...prev, newPassword: text }))}
-                            secureTextEntry
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                            disabled={isSaving}
-                        />
+                        <View style={styles.inlineRow}>
+                            <View style={{ flex: 1 }}>
+                                <Input
+                                    label="Nueva contraseña"
+                                    placeholder="Dejar en blanco para no cambiar"
+                                    value={formData.newPassword}
+                                    onChangeText={(text: string) => setFormData(prev => ({ ...prev, newPassword: text }))}
+                                    secureTextEntry={!showPwd}
+                                    autoCapitalize="none"
+                                    autoCorrect={false}
+                                    disabled={isSaving}
+                                />
+                            </View>
+                            <Button title={showPwd ? '🙈' : '👁️'} variant="secondary" onPress={() => setShowPwd(s => !s)} style={styles.iconBtn} />
+                        </View>
+                        {formData.newPassword.length > 0 && (
+                            <Text style={{ color: pwdStrength.color, marginTop: -8, marginBottom: 8 }}>Fuerza: {pwdStrength.level}</Text>
+                        )}
 
                         {formData.newPassword ? (
-                            <Input
-                                label="Confirmar nueva contraseña"
-                                placeholder="Repita la nueva contraseña"
-                                value={formData.confirmPassword}
-                                onChangeText={(text: string) => setFormData(prev => ({ ...prev, confirmPassword: text }))}
-                                secureTextEntry
-                                autoCapitalize="none"
-                                autoCorrect={false}
-                                disabled={isSaving}
-                            />
+                            <View style={styles.inlineRow}>
+                                <View style={{ flex: 1 }}>
+                                    <Input
+                                        label="Confirmar nueva contraseña"
+                                        placeholder="Repita la nueva contraseña"
+                                        value={formData.confirmPassword}
+                                        onChangeText={(text: string) => setFormData(prev => ({ ...prev, confirmPassword: text }))}
+                                        secureTextEntry={!showConfirm}
+                                        autoCapitalize="none"
+                                        autoCorrect={false}
+                                        disabled={isSaving}
+                                    />
+                                </View>
+                                <Button title={showConfirm ? '🙈' : '👁️'} variant="secondary" onPress={() => setShowConfirm(s => !s)} style={styles.iconBtn} />
+                            </View>
                         ) : null}
 
                         <View style={styles.checkboxContainer}>
@@ -200,8 +243,22 @@ export default function EditUser() {
                     {!formData.isAdmin && (
                         <View style={styles.section}>
                             <Text style={styles.sectionTitle}>Permisos</Text>
+                            <Text style={{ fontSize: 14, marginBottom: 8, color: '#666' }}>Roles rápidos:</Text>
+                            <View style={styles.presetRow}>
+                                {Object.keys(rolePresets).map((role) => (
+                                    <Button key={role} title={role} variant="secondary" onPress={() => applyRolePreset(role)} style={{ paddingHorizontal: 10 }} />
+                                ))}
+                            </View>
+                            <Text style={{ fontSize: 14, marginTop: 10, marginBottom: 8, color: '#666' }}>O selecciona manualmente:</Text>
+                            <View style={styles.presetRow}>
+                                <Button title="Seleccionar todo" variant="secondary" onPress={() => setUserPermissions(availablePermissions.map(x => x.name))} />
+                                <Button title="Limpiar" variant="secondary" onPress={() => setUserPermissions([])} />
+                            </View>
+                            <Input placeholder="Filtrar permisos" value={permFilter} onChangeText={setPermFilter as any} />
                             <View style={styles.permissionsGrid}>
-                                {availablePermissions.map((permission) => (
+                                {availablePermissions
+                                    .filter(p => p.name.toLowerCase().includes(permFilter.toLowerCase()))
+                                    .map((permission) => (
                                     <Button
                                         key={permission.id}
                                         title={permission.name}
@@ -260,6 +317,17 @@ const styles = StyleSheet.create({
         marginBottom: 15,
         color: '#333',
     },
+    inlineRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    iconBtn: {
+        width: 44,
+        height: 40,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
     input: {
         height: 50,
         borderWidth: 1,
@@ -289,6 +357,11 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         flexWrap: 'wrap',
         gap: 10,
+    },
+    presetRow: {
+        flexDirection: 'row',
+        gap: 8,
+        marginBottom: 10,
     },
     permissionButton: {
         marginBottom: 10,

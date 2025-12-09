@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Image, StyleSheet, useWindowDimensions, Alert } from 'react-native';
+import { View, Image, StyleSheet, useWindowDimensions, Alert, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Linking from 'expo-linking';
 import Button from './Button';
@@ -65,7 +65,7 @@ export default function Layout({ children, title, sidebar }: LayoutProps) {
             {/* Sidebar */}
             <View style={[styles.sidebar, { width: sidebarWidth }] }>
                 {sidebar || (
-                    <>
+                    <ScrollView style={{ width: '100%' }} contentContainerStyle={{ alignItems: 'center', paddingHorizontal: 8, paddingBottom: 20 }}>
                         <Image
                             source={require("../../assets/images/logo.jpeg")}
                             style={[styles.logo, isSmall && { width: 100, height: 100 }]}
@@ -94,7 +94,7 @@ export default function Layout({ children, title, sidebar }: LayoutProps) {
                                 style={{ width: menuButtonWidth, height: menuButtonHeight }}
                             />
                         </View>
-                    </>
+                    </ScrollView>
                 )}
             </View>
 

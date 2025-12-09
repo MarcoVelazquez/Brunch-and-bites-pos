@@ -144,6 +144,14 @@ export const createTables = async (db: SQLiteDatabase): Promise<void> => {
                 description TEXT,
                 amount REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS cash_openings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                open_date TEXT NOT NULL UNIQUE,
+                open_time TEXT NOT NULL,
+                amount REAL NOT NULL,
+                user_id INTEGER,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
             CREATE TABLE IF NOT EXISTS costings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -172,7 +180,7 @@ export const insertInitialPermissions = async (db: SQLiteDatabase): Promise<void
         'CREAR_USUARIOS', 'ELIMINAR_USUARIOS', 'DAR_PERMISOS', 'QUITAR_PERMISOS', 'COBRAR',
         'ABRIR_CAJA', 'CERRAR_CAJA', 'REALIZAR_DEVOLUCIONES', 'AGREGAR_PRODUCTOS', 'ELIMINAR_PRODUCTOS',
         'EDITAR_PRODUCTOS', 'VER_COSTEOS', 'REALIZAR_COSTEOS', 'ELIMINAR_COSTEOS', 'REGISTRAR_GASTOS',
-        'VER_GASTOS', 'ELIMINAR_GASTOS', 'VER_REPORTES'
+        'VER_GASTOS', 'ELIMINAR_GASTOS', 'VER_REPORTES', 'GESTIONAR_INVENTARIO'
     ];
     const row = await db.getFirstAsync('SELECT COUNT(*) as count FROM permissions');
     const count = row?.count ?? 0;
@@ -485,6 +493,34 @@ export const updateExpense = async (db: SQLiteDatabase, expenseId: number, descr
 export const deleteExpense = async (db: SQLiteDatabase, expenseId: number): Promise<number> => {
     const res = await db.runAsync('DELETE FROM expenses WHERE id = ?', [expenseId]);
     return Number(res.changes);
+};
+
+// Cash opening (Caja) functions
+export const addCashOpening = async (db: SQLiteDatabase, amount: number, userId?: number | null): Promise<number> => {
+    const today = new Date();
+    const open_date = today.toISOString().slice(0,10);
+    const open_time = today.toLocaleTimeString('es-MX', { hour12: false });
+    const res = await db.runAsync(
+        `INSERT OR REPLACE INTO cash_openings (id, open_date, open_time, amount, user_id)
+         VALUES ((SELECT id FROM cash_openings WHERE open_date = ?), ?, ?, ?, ?)`,
+        [open_date, open_date, open_time, amount, userId ?? null]
+    );
+    return Number(res.lastInsertRowId ?? 0);
+};
+
+export const getCashOpeningForDate = async (db: SQLiteDatabase, dateISO: string): Promise<{ id: number; open_date: string; open_time: string; amount: number; user_id: number | null } | null> => {
+    const row = await db.getFirstAsync('SELECT * FROM cash_openings WHERE open_date = ?', [dateISO]);
+    return row ?? null;
+};
+
+export const getTodayCashOpening = async (db: SQLiteDatabase): Promise<{ id: number; open_date: string; open_time: string; amount: number; user_id: number | null } | null> => {
+    const today = new Date().toISOString().slice(0,10);
+    return await getCashOpeningForDate(db, today);
+};
+
+export const deleteTodayCashOpening = async (db: SQLiteDatabase): Promise<void> => {
+    const today = new Date().toISOString().slice(0,10);
+    await db.runAsync('DELETE FROM cash_openings WHERE open_date = ?', [today]);
 };
 
 // Costing Management Functions

@@ -6,7 +6,7 @@ import { openDB, getAllSales, getSaleItems, getAllProducts, getAllExpenses } fro
 import type { Sale, SaleItem, Product } from './lib/database.types';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import * as Print from 'expo-print';
-import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system/legacy';
 
 interface ReporteSales {
   productName: string;
@@ -252,6 +252,15 @@ export default function ReportesScreen() {
 
   const exportToPDF = async () => {
     try {
+      // Cargar el logo como base64
+      const logoUri = FileSystem.documentDirectory + '../assets/images/icon.png';
+      let logoBase64 = '';
+      try {
+        logoBase64 = await FileSystem.readAsStringAsync(logoUri, { encoding: FileSystem.EncodingType.Base64 });
+      } catch (e) {
+        console.log('No se pudo cargar el logo:', e);
+      }
+
       let html = '';
       const fechaActual = new Date().toLocaleString('es-ES');
       const periodo = fechaInicio && fechaFin 
@@ -352,6 +361,7 @@ export default function ReportesScreen() {
               <meta charset="utf-8">
               <style>
                 body { font-family: Arial, sans-serif; padding: 20px; }
+                .logo { width: 100px; height: 100px; border-radius: 50px; margin: 0 auto 20px; display: block; }
                 h1 { color: #333; text-align: center; }
                 .info { text-align: center; margin-bottom: 20px; color: #666; }
                 .chart { display: flex; justify-content: center; margin-top: 10px; }
@@ -363,6 +373,7 @@ export default function ReportesScreen() {
               </style>
             </head>
             <body>
+              ${logoBase64 ? `<img src="data:image/png;base64,${logoBase64}" class="logo" alt="Logo" />` : ''}
               <h1>Reporte de Ventas</h1>
               <div class="info">
                 <p><strong>Período:</strong> ${periodo}</p>
@@ -400,6 +411,7 @@ export default function ReportesScreen() {
               <meta charset="utf-8">
               <style>
                 body { font-family: Arial, sans-serif; padding: 20px; }
+                .logo { width: 100px; height: 100px; border-radius: 50px; margin: 0 auto 20px; display: block; }
                 h1 { color: #333; text-align: center; }
                 .info { text-align: center; margin-bottom: 20px; color: #666; }
                 .chart { display: flex; justify-content: center; margin: 10px 0 20px 0; }
@@ -412,6 +424,7 @@ export default function ReportesScreen() {
               </style>
             </head>
             <body>
+              ${logoBase64 ? `<img src="data:image/png;base64,${logoBase64}" class="logo" alt="Logo" />` : ''}
               <h1>Resumen General</h1>
               <div class="info">
                 <p><strong>Período:</strong> ${periodo}</p>
@@ -448,7 +461,7 @@ export default function ReportesScreen() {
       // Generar PDF
       const { uri } = await Print.printToFileAsync({ html });
       
-      // Compartir o abrir el PDF
+      // Guardar PDF automáticamente
       if (Platform.OS === 'web') {
         // En web, abrir en una nueva pestaña
         const newWindow = window.open(uri, '_blank');
@@ -456,12 +469,52 @@ export default function ReportesScreen() {
           Alert.alert('PDF generado', `El PDF se guardó en: ${uri}`);
         }
       } else {
-        // En móvil, compartir el archivo
-        if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(uri);
-        } else {
-          Alert.alert('Éxito', `PDF generado en: ${uri}`);
+        // En móvil, guardar en el directorio de documentos
+        const reportType = tipoReporte === 'ventas' ? 'Ventas' : 'Resumen';
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const fileName = `Reporte_${reportType}_${timestamp}.pdf`;
+        
+        // Crear directorio si no existe
+        const reportsDir = `${FileSystem.documentDirectory}reportes/`;
+        const dirInfo = await FileSystem.getInfoAsync(reportsDir);
+        if (!dirInfo.exists) {
+          await FileSystem.makeDirectoryAsync(reportsDir, { intermediates: true });
         }
+        
+        // Copiar el PDF al directorio de reportes
+        const newPath = `${reportsDir}${fileName}`;
+        await FileSystem.copyAsync({ from: uri, to: newPath });
+        
+        // En Android, opcionalmente guardar en carpeta pública
+        if (Platform.OS === 'android') {
+          try {
+            const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+            if (permissions.granted) {
+              const base64 = await FileSystem.readAsStringAsync(newPath, {
+                encoding: FileSystem.EncodingType.Base64,
+              });
+              await FileSystem.StorageAccessFramework.createFileAsync(
+                permissions.directoryUri,
+                fileName,
+                'application/pdf'
+              )
+                .then(async (uri) => {
+                  await FileSystem.writeAsStringAsync(uri, base64, {
+                    encoding: FileSystem.EncodingType.Base64,
+                  });
+                })
+                .catch((e) => console.log('Error saving to public folder:', e));
+            }
+          } catch (error) {
+            console.log('User cancelled or error:', error);
+          }
+        }
+        
+        Alert.alert(
+          'Reporte guardado',
+          `El reporte se guardó en:\n${newPath}`,
+          [{ text: 'OK' }]
+        );
       }
     } catch (error) {
       console.error('Error generating PDF:', error);
@@ -625,6 +678,9 @@ export default function ReportesScreen() {
         <View style={[styles.filterGroup, isMobile && { width: '100%' }]}>
           <Text style={styles.filterLabel}>Tipo de reporte</Text>
           <View style={styles.pickerContainer}>
+            <Text style={styles.pickerDisplayText}>
+              {tipoReporte === 'ventas' ? 'Ventas' : 'Resumen'}
+            </Text>
             <Picker
               selectedValue={tipoReporte}
               onValueChange={(value) => {
@@ -639,9 +695,6 @@ export default function ReportesScreen() {
               <Picker.Item label="Resumen" value="resumen" />
             </Picker>
           </View>
-          <Text style={styles.currentTypeText}>
-            Mostrando: {tipoReporte === 'ventas' ? 'Ventas' : 'Resumen'}
-          </Text>
         </View>
         <View style={[styles.filterGroup, isMobile && { width: '100%' }]}>
           <Text style={styles.filterLabel}>Fecha</Text>
@@ -752,6 +805,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     overflow: "hidden",
     backgroundColor: "#f9f9f9",
+    position: "relative",
   },
   picker: {
     height: 36,
@@ -760,14 +814,23 @@ const styles = StyleSheet.create({
   pickerText: {
     color: "#333",
   },
+  pickerDisplayText: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 8,
+    paddingVertical: 9,
+    fontSize: 14,
+    color: "#333",
+    fontWeight: "500",
+    pointerEvents: "none",
+    zIndex: 1,
+  },
   pickerItem: {
     fontSize: 12,
     color: "#333",
-  },
-  currentTypeText: {
-    marginTop: 4,
-    fontSize: 11,
-    color: '#666',
   },
   dateInputsRow: {
     flexDirection: "row",

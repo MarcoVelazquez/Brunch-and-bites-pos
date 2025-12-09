@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Image, StyleSheet, useWindowDimensions, Alert } from 'react-native';
+import { View, Image, StyleSheet, useWindowDimensions, Alert, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Linking from 'expo-linking';
 import Button from './Button';
@@ -66,6 +66,7 @@ export default function Layout({ children, title, sidebar }: LayoutProps) {
     const defaultMenuItems = [
         { title: 'Caja', icon: '💰', route: '/caja', permission: 'OPERAR_CAJA', description: 'Ventas y cobros' },
         { title: 'Productos', icon: '📦', route: '/productos', permission: 'GESTIONAR_PRODUCTOS', description: 'Inventario' },
+        { title: 'Inventario', icon: '📦', route: '/inventario', permission: 'GESTIONAR_INVENTARIO', description: 'Stock' },
         { title: 'Recibos', icon: '🧾', route: '/recibos', permission: 'VER_VENTAS', description: 'Historial' },
         { title: 'Gastos', icon: '💳', route: '/gastos', permission: 'GESTIONAR_GASTOS', description: 'Egresos' },
         { title: 'Costeos', icon: '📋', route: '/costeos', permission: 'GESTIONAR_COSTEOS', description: 'Costos' },
@@ -80,7 +81,7 @@ export default function Layout({ children, title, sidebar }: LayoutProps) {
             {/* Sidebar */}
             <View style={[styles.sidebar, { width: sidebarWidth }] }>
                 {sidebar || (
-                    <>
+                    <ScrollView style={{ width: '100%' }} contentContainerStyle={[styles.sidebarScrollContent, isVerticalMobile && { paddingHorizontal: 4 }]}>
                         <Image
                             source={require("../../assets/images/logo.jpeg")}
                             style={[
@@ -156,7 +157,7 @@ export default function Layout({ children, title, sidebar }: LayoutProps) {
                                 textStyle={{ fontSize: menuButtonFontSize }}
                             />
                         </View>
-                    </>
+                    </ScrollView>
                 )}
             </View>
 
@@ -191,6 +192,11 @@ export const styles = StyleSheet.create({
         paddingBottom: 20,
         borderTopLeftRadius: 20,
         borderBottomLeftRadius: 20,
+    },
+    sidebarScrollContent: {
+        alignItems: 'center',
+        paddingHorizontal: 8,
+        paddingBottom: 20,
     },
     logo: {
         width: 140,

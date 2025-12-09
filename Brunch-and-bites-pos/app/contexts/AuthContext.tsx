@@ -229,6 +229,11 @@ function AuthProviderComponent({ children }: AuthProviderProps) {
             return true;
         }
 
+        // Inventario: solo administradores
+        if (permission === 'GESTIONAR_INVENTARIO') {
+            return false;
+        }
+
         return state.permissions.includes(permission);
     };
 
